@@ -119,7 +119,6 @@ if enabled_categories.get("Voice Config", True):
             event_name = f"Porting Event {i}"
             selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Voice Config", "Task": f"Submit LOA/FOC for {event_name}", "Owner": "Carrier Lead"})
             selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Voice Config", "Task": f"Execution/Cutover for {event_name}", "Owner": "Voice Eng"})
-            selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Voice Config", "Task": f"Execution/Cutover for {event_name}", "Owner": "Voice Eng"})
             selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Voice Config", "Task": f"iPilot Call Path Update for {event_name}", "Owner": "Voice Eng"})
             selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Voice Config", "Task": f"FreeCallerRegistry Update for {event_name}", "Owner": "Voice Eng"})
             selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Voice Config", "Task": f"D911 iPilot Update for {event_name}", "Owner": "Voice Eng"})
