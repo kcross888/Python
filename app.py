@@ -49,6 +49,7 @@ raw_task_data = [
     ["Staging and Configuration", "Staging", "Analog", "ATA Connected", "Customer"],
     ["Staging and Configuration", "Staging", "Operator Connect", "iPilot Test Numbers provisioned", "Lead Engineer"],
     ["Staging and Configuration", "Staging", "DRaaS", "iPilot Test Numbers provisioned", "Lead Engineer"],
+    ["Staging and Configuration", "Staging", "Voice Config", "iPilot Test Numbers registered with FreeCallerRegistry", "Lead Engineer"],
     ["Staging and Configuration", "Staging", "Voice Config", "Pilot group identified", "Customer"],
     ["Staging and Configuration", "Staging", "Direct Routing", "SBC Connected", "Customer"],
     ["Staging and Configuration", "Configuration", "Voice Config", "Pilot group configured with Teams Voice", "Lead Engineer"],
