@@ -57,8 +57,8 @@ raw_task_data = [
     ["Staging and Configuration", "Configuration", "Voice Config", "Auto attendants configured", "Lead Engineer"],
     ["Staging and Configuration", "Configuration", "Voice Config", "Call queues configured", "Lead Engineer"],
     ["Staging and Configuration", "Configuration", "Voice Config", "Dial Plans configured (if required)", "Lead Engineer"],
-    ["Testing and Validation (Operational Readiness)", "Testing", "Standard", "Test Plan Executed", "Voice Eng"],
-    ["Testing and Validation (Operational Readiness)", "Testing", "Standard", "Test Failures Remediated or identified and communicated", "Voice Eng"],
+    ["Testing and Validation (Operational Readiness)", "Testing", "Standard", "Test Plan Executed", "Customer"],
+    ["Testing and Validation (Operational Readiness)", "Testing", "Standard", "Test Failures Remediated or identified and communicated", "Lead Engineer"],
     ["Implementation", "User Readiness", "Standard", "User Communication and Training has been delivered or scheduled", "Customer"],
 ]
 
@@ -119,10 +119,10 @@ if enabled_categories.get("Voice Config", True):
         for i in range(1, port_count + 1):
             event_name = f"Porting Event {i}"
             selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Voice Config", "Task": f"Submit LOA/FOC for {event_name}", "Owner": "Carrier Lead"})
-            selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Voice Config", "Task": f"Execution/Cutover for {event_name}", "Owner": "Voice Eng"})
-            selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Voice Config", "Task": f"iPilot Call Path Update for {event_name}", "Owner": "Voice Eng"})
-            selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Voice Config", "Task": f"FreeCallerRegistry Update for {event_name}", "Owner": "Voice Eng"})
-            selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Voice Config", "Task": f"D911 iPilot Update for {event_name}", "Owner": "Voice Eng"})
+            selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Voice Config", "Task": f"Execution/Cutover for {event_name}", "Owner": "Lead Engineer"})
+            selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Voice Config", "Task": f"iPilot Call Path Update for {event_name}", "Owner": "Lead Engineer"})
+            selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Voice Config", "Task": f"FreeCallerRegistry Update for {event_name}", "Owner": "Customer"})
+            selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Voice Config", "Task": f"D911 iPilot Update for {event_name}", "Owner": "Lead Engineer"})
 
 # --- 5. PREVIEW & EXPORT ---
 df = pd.DataFrame(selected_tasks)
