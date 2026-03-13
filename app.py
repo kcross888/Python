@@ -2,22 +2,63 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
+# https://673szt68ypq4sugnzq8vbr.streamlit.app/
+
 # 1. THE INTERNAL MASTER DATA
 # PHASE | ITEM | CATEGORY | TASK | OWNER
 raw_task_data = [
-    ["Discovery, Planning, Design", "Base Discovery", "Standard", "Identify Network Topology", "Network Eng"],
-    ["Discovery, Planning, Design", "Base Discovery", "Standard", "Review M365 Licensing Status", "Admin"],
-    ["Discovery, Planning, Design", "Paging Systems", "Paging", "Audit Analog Paging Controllers", "Voice Eng"],
-    ["Discovery, Planning, Design", "Contact Center", "Contact Center", "Review Existing Queue Logic", "BA"],
-    
-    ["Configuration", "Core Voice", "Standard", "Configure Emergency Routing Policies", "Voice Eng"],
-    ["Configuration", "Core Voice", "Standard", "Set up Tenant Dial Plans", "Voice Eng"],
-    ["Configuration", "Paging Integration", "Paging", "Configure ATA/Gateway in Teams", "Voice Eng"],
-    ["Configuration", "Paging Integration", "Paging", "Test Analog Port Paging", "Field Tech"],
-    ["Configuration", "Auto Attendants", "Standard", "Build AA Menu Navigation", "Voice Eng"],
-    
-    ["Implementation", "User Migration", "Standard", "Assign Phone Numbers to Users", "Admin"],
-    ["Implementation", "User Migration", "Standard", "Distribute User Training Manuals", "PM"],
+    ["Initiation", "Project Onboading", "Standard", "Engineer Review of SOW", "Lead Engineer"],
+    ["Initiation", "Project Onboarding", "Standard", "Internal Kickoff Call", "PM"],
+    ["Initiation", "Project Onboarding", "Standard", "Client Kickoff Call", "PM"],
+    ["Initiation", "Customer Onboarding", "Operator Connect", "Enable NWN as Operator Connect provider", "Customer"],
+    ["Initiation", "Customer Onboarding", "DRaaS", "NWN Integration through App Auth", "Customer"],
+    ["Discovery, Planning, Design", "Discovery", "Standard", "Initial Discovery Meeting with Customer", "PM"],
+    ["Discovery, Planning, Design", "Discovery", "Voice Config", "NWN Access", "Customer"],
+    ["Discovery, Planning, Design", "Discovery", "Voice Config", "Phone Number Migration - High Level", "Lead Engineer"],
+    ["Discovery, Planning, Design", "Discovery", "Voice Config", "Dialing Pattern Requirements", "Lead Engineer"],
+    ["Discovery, Planning, Design", "Discovery", "Voice Config", "Routing Requirements (Intl, Domestic, etc)", "Lead Engineer"],
+    ["Discovery, Planning, Design", "Discovery", "Paging", "Paging - OHP", "Lead Engineer"],
+    ["Discovery, Planning, Design", "Discovery", "Paging", "Paging - Phone Paging", "Lead Engineer"],
+    ["Discovery, Planning, Design", "Discovery", "Faxing", "Faxing (ATA vs Cloud vs other)", "Lead Engineer"],
+    ["Discovery, Planning, Design", "Discovery", "Analog", "Call buttons, POTS lines, PLARs", "Lead Engineer"],
+    ["Discovery, Planning, Design", "Data Collection", "Voice Config", "User Template (DIDs and UPNs, Shared Lines, etc)", "Lead Engineer"],
+    ["Discovery, Planning, Design", "Data Collection", "Voice Config", "E911 Template", "Lead Engineer"],
+    ["Discovery, Planning, Design", "Data Collection", "Voice Config", "AA/CQ Template", "Lead Engineer"],
+    ["Discovery, Planning, Design", "Data Collection", "Analog", "ATA Zero Touch Config Template", "Lead Engineer"],
+    ["Discovery, Planning, Design", "Planning", "Voice Config", "Migration Waves & Port Events", "SOW"],
+    ["Discovery, Planning, Design", "Planning", "Voice Config", "Licensing Procurement", "Customer"],
+    ["Discovery, Planning, Design", "Planning", "Voice Config", "Handset Procurement", "Customer"],
+    ["Discovery, Planning, Design", "Planning", "Analog", "ATA Procurement", "Customer"],
+    ["Discovery, Planning, Design", "Planning", "Direct Routing", "SBC Procurement", "Customer"],
+    ["Discovery, Planning, Design", "Planning", "Paging", "Paging Adapter Procurement", "Customer"],
+    ["Discovery, Planning, Design", "Design", "Paging", "Paging - OHP", "Lead Engineer"],
+    ["Discovery, Planning, Design", "Design", "Paging", "Paging - Phone Paging", "Lead Engineer"],
+    ["Discovery, Planning, Design", "Design", "Faxing", "Faxing (ATA vs Cloud vs other)", "Lead Engineer"],
+    ["Discovery, Planning, Design", "Design", "Analog", "Call buttons, POTS lines, PLARs", "Lead Engineer"],
+    ["Discovery, Planning, Design", "Design", "Voice Config", "E911 Finalization", "Lead Engineer"],
+    ["Discovery, Planning, Design", "Design", "Voice Config", "AA/CQ Finalization", "Lead Engineer"],
+    ["Discovery, Planning, Design", "Design", "Voice Config", "Shared Lines Finalization", "Lead Engineer"],
+    ["Discovery, Planning, Design", "Design", "Voice Config", "User and Shared Device Finalization", "Lead Engineer"],
+    ["Staging and Configuration", "Staging", "Licensing", "User Licenses Procured", "Customer"],
+    ["Staging and Configuration", "Staging", "Licensing", "Shared Device Licenses Procured", "Customer"],
+    ["Staging and Configuration", "Staging", "Licensing", "Resource Account Licenses Procured", "Customer"],
+    ["Staging and Configuration", "Staging", "Licensing", "Teams Premium Licenses Procured", "Customer"],
+    ["Staging and Configuration", "Configuration", "Voice Config", "Shared Device Accounts Created", "Lead Engineer"],
+    ["Staging and Configuration", "Configuration", "Voice Config", "Resource Accounts Created", "Lead Engineer"],
+    ["Staging and Configuration", "Configuration", "Voice Config", "M365 Groups Created (CQ's, VM, etc)", "Lead Engineer"],
+    ["Staging and Configuration", "Staging", "Analog", "ATA Connected", "Customer"],
+    ["Staging and Configuration", "Staging", "Operator Connect", "iPilot Test Numbers provisioned", "Lead Engineer"],
+    ["Staging and Configuration", "Staging", "DRaaS", "iPilot Test Numbers provisioned", "Lead Engineer"],
+    ["Staging and Configuration", "Staging", "Voice Config", "Pilot group identified", "Customer"],
+    ["Staging and Configuration", "Staging", "Direct Routing", "SBC Connected", "Customer"],
+    ["Staging and Configuration", "Configuration", "Voice Config", "Pilot group configured with Teams Voice", "Lead Engineer"],
+    ["Staging and Configuration", "Configuration", "Voice Config", "E911 Configured", "Lead Engineer"],
+    ["Staging and Configuration", "Configuration", "Voice Config", "Auto attendants configured", "Lead Engineer"],
+    ["Staging and Configuration", "Configuration", "Voice Config", "Call queues configured", "Lead Engineer"],
+    ["Staging and Configuration", "Configuration", "Voice Config", "Dial Plans configured (if required)", "Lead Engineer"],
+    ["Testing and Validation (Operational Readiness)", "Testing", "Standard", "Test Plan Executed", "Voice Eng"],
+    ["Testing and Validation (Operational Readiness)", "Testing", "Standard", "Test Failures Remediated or identified and communicated", "Voice Eng"],
+    ["Implementation", "User Readiness", "Standard", "User Communication and Training has been delivered or scheduled", "Customer"],
 ]
 
 # Function to transform the flat list into the nested format
@@ -67,17 +108,21 @@ for phase, items in master_data.items():
                             selected_tasks.append(new_task)
 
 # --- 4. PORTING EVENTS LOGIC (Re-added) ---
-# Only show if 'Standard' is enabled, as porting is a core voice function
-if enabled_categories.get("Standard", True):
+# Only show if 'Voice Config' is enabled, as porting is a core voice function
+if enabled_categories.get("Voice Config", True):
     st.sidebar.divider()
     st.sidebar.header("🚛 Porting Logistics")
-    port_count = st.sidebar.number_input("Number of Porting Events", min_value=0, max_value=10, value=1)
+    port_count = st.sidebar.number_input("Number of Porting Events", min_value=0, max_value=20, value=1)
     
     if port_count > 0:
         for i in range(1, port_count + 1):
             event_name = f"Porting Event {i}"
-            selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Standard", "Task": f"Submit LOA/FOC for {event_name}", "Owner": "Carrier Lead"})
-            selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Standard", "Task": f"Execution/Cutover for {event_name}", "Owner": "Voice Eng"})
+            selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Voice Config", "Task": f"Submit LOA/FOC for {event_name}", "Owner": "Carrier Lead"})
+            selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Voice Config", "Task": f"Execution/Cutover for {event_name}", "Owner": "Voice Eng"})
+            selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Voice Config", "Task": f"Execution/Cutover for {event_name}", "Owner": "Voice Eng"})
+            selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Voice Config", "Task": f"iPilot Call Path Update for {event_name}", "Owner": "Voice Eng"})
+            selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Voice Config", "Task": f"FreeCallerRegistry Update for {event_name}", "Owner": "Voice Eng"})
+            selected_tasks.append({"Phase": "Implementation", "Item": event_name, "Category": "Voice Config", "Task": f"D911 iPilot Update for {event_name}", "Owner": "Voice Eng"})
 
 # --- 5. PREVIEW & EXPORT ---
 df = pd.DataFrame(selected_tasks)
