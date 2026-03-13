@@ -75,8 +75,8 @@ def get_nested_data(data_list):
 master_data = get_nested_data(raw_task_data)
 
 # --- STREAMLIT UI ---
-st.set_page_config(page_title="Teams Voice Scoper", layout="wide")
-st.title("📞 Teams Voice Project Scoper")
+st.set_page_config(page_title="Teams Voice Project Task List", layout="wide")
+st.title("📞 Teams Voice Project Task List")
 
 # 2. GLOBAL CATEGORY FILTERS
 st.sidebar.header("🌍 Global Category Filter")
@@ -111,7 +111,7 @@ for phase, items in master_data.items():
 # Only show if 'Voice Config' is enabled, as porting is a core voice function
 if enabled_categories.get("Voice Config", True):
     st.sidebar.divider()
-    st.sidebar.header("🚛 Porting Logistics")
+    st.sidebar.header("🚛 Phone Number Porting Waves")
     port_count = st.sidebar.number_input("Number of Porting Events", min_value=0, max_value=20, value=1)
     
     if port_count > 0:
