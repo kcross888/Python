@@ -7,7 +7,7 @@ from io import BytesIO
 # 1. THE INTERNAL MASTER DATA
 # PHASE | ITEM | CATEGORY | TASK | OWNER
 raw_task_data = [
-    ["Initiation", "Project Onboading", "Standard", "Engineer Review of SOW", "Lead Engineer"],
+    ["Initiation", "Project Onboarding", "Standard", "Engineer Review of SOW", "Lead Engineer"],
     ["Initiation", "Project Onboarding", "Standard", "Internal Kickoff Call", "PM"],
     ["Initiation", "Project Onboarding", "Standard", "Client Kickoff Call", "PM"],
     ["Initiation", "Customer Onboarding", "Operator Connect", "Enable NWN as Operator Connect provider", "Customer"],
