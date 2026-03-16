@@ -234,7 +234,7 @@ if uploaded_file is not None:
                     for d in st.session_state.get("raw_domains", []):
                         if is_valid_uuid(d): 
                             domain_mapping["Operator Connect"] = d
-                        elif str(d).startswith("NWNMS"): 
+                        else: 
                             domain_mapping["DRaaS"] = d
 
                     if domain_mapping:
