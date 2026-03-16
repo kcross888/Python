@@ -86,7 +86,6 @@ def get_all_customers():
     base_url = "https://api.nuwave.com/v1"
 
     try:
-        # 1. Main Carousel
         url1 = f"{base_url}/accounts/customer?instance=carousel&limit=500"
         res1 = requests.get(url1, headers=headers)
         log_api_call("GET", url1, res1)
@@ -95,12 +94,11 @@ def get_all_customers():
             for item in res1.json():
                 info = item.get("accountInfo", {})
                 customer_list.append({
-                    "companyName": info.get("companyName"), # Note: Case Sensitive
+                    "companyName": info.get("companyName"),
                     "accountId": info.get("accountId"),
                     "resellerId": ""
                 })
 
-        # 2. Resellers
         for r_id in ['4', '2', '1']:
             url_r = f"{base_url}/site/resellerId/{r_id}?instance=carousel&limit=500"
             res_r = requests.get(url_r, headers=headers)
@@ -132,7 +130,7 @@ with st.sidebar:
     uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
     
     if st.button("🔄 Clear All Caches"):
-        for key in ["customer_cache", "raw_domains", "current_customer_id", "api_token", "api_debug_log"]:
+        for key in ["customer_cache", "raw_domains", "current_customer_id", "api_token", "api_debug_log", "address_data"]:
             if key in st.session_state:
                 del st.session_state[key]
         st.rerun()
@@ -149,13 +147,11 @@ with st.sidebar:
 # --- Main App Logic ---
 st.title("NWN Collaboration Team iPilot & Teams Provisioning")
 
-# PHASE 1: Authentication
 if "api_token" not in st.session_state:
     st.info("Please connect to iPilot to begin.")
     if st.button("Connect to iPilot"):
         login_dialog()
 else:
-    # PHASE 2: Customer & Domain Selection
     if "customer_cache" not in st.session_state:
         with st.spinner("Building Customer Cache..."):
             st.session_state["customer_cache"] = get_all_customers()
@@ -173,34 +169,39 @@ else:
     
     if selected_customer:
         target_id = selected_customer['accountId']
+        token = st.session_state.get("api_token")
+        headers = {"x-access-token": token, "x-api-key": "sUxNytmtwt5u8uZrwTbtx4qo7Mxy279x88cG0tFs", "accept": "application/json"}
         
-        # Domain Lookup logic
+        # DOMAIN & ADDRESS LOOKUP (Triggered when customer changes)
         if st.session_state.get("current_customer_id") != target_id:
-            token = st.session_state.get("api_token")
-            headers = {
-                "x-access-token": token, 
-                "x-api-key": "sUxNytmtwt5u8uZrwTbtx4qo7Mxy279x88cG0tFs", 
-                "accept": "application/json"
-            }
-            d_url = f"https://api.nuwave.com/v1/msteams?instance=carousel&customerId={target_id}"
-            
-            try:
-                d_res = requests.get(d_url, headers=headers)
-                log_api_call("GET", d_url, d_res)
-                resp_json = d_res.json()
-                # Parsing for List-wrapped Dictionary: [{ "domains": [...] }]
-                if isinstance(resp_json, list) and len(resp_json) > 0:
-                    st.session_state["raw_domains"] = resp_json[0].get("domains", [])
-                else:
+            with st.spinner("Fetching Customer Metadata..."):
+                # 1. Domains
+                d_url = f"https://api.nuwave.com/v1/msteams?instance=carousel&customerId={target_id}"
+                try:
+                    d_res = requests.get(d_url, headers=headers)
+                    log_api_call("GET", d_url, d_res)
+                    resp_json = d_res.json()
+                    st.session_state["raw_domains"] = resp_json[0].get("domains", []) if isinstance(resp_json, list) and resp_json else []
+                except:
                     st.session_state["raw_domains"] = []
+
+                # 2. Civic Addresses (PowerShell equivalent)
+                addr_url = f"https://api.nuwave.com/v1/msteams/ocAddress/{target_id}?instance=carousel"
+                try:
+                    addr_res = requests.get(addr_url, headers=headers)
+                    log_api_call("GET", addr_url, addr_res)
+                    addr_json = addr_res.json()
+                    # Extract addresses property (equivalent to select -ExpandProperty addresses)
+                    st.session_state["address_data"] = addr_json.get("addresses", []) if isinstance(addr_json, dict) else []
+                except:
+                    st.session_state["address_data"] = []
+
                 st.session_state["current_customer_id"] = target_id
-            except Exception as e:
-                st.error(f"Domain lookup failed: {e}")
 
         domain_mapping = {}
         for d in st.session_state.get("raw_domains", []):
             if is_valid_uuid(d): domain_mapping["Operator Connect"] = d
-            elif str(d).startswith("NWNMS"): domain_mapping["DRaaS"] = d
+            else: domain_mapping["DRaaS"] = d
 
         with col2:
             if domain_mapping:
@@ -214,17 +215,37 @@ else:
             st.divider()
             
             # PHASE 3: Template Generation
-            st.subheader("🛠️ Step 1: Customer Template")
-            template_df = pd.DataFrame(columns=EXPECTED_COLUMNS)
-            csv_template = template_df.to_csv(index=False).encode('utf-8')
+            st.subheader("🛠️ Step 1: Download Engineer Resources")
             
-            st.download_button(
-                label="📥 Download Template CSV for this Customer",
-                data=csv_template,
-                file_name=f"Template_{selected_customer['companyName'].replace(' ', '_')}.csv",
-                mime='text/csv',
-                help="Download a clean CSV with the required headers for this account."
-            )
+            t_col1, t_col2 = st.columns(2)
+            
+            with t_col1:
+                # Blank Template
+                template_df = pd.DataFrame(columns=EXPECTED_COLUMNS)
+                csv_template = template_df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Download Blank Template CSV",
+                    data=csv_template,
+                    file_name=f"Template_{selected_customer['companyName'].replace(' ', '_')}.csv",
+                    mime='text/csv',
+                    use_container_width=True
+                )
+            
+            with t_col2:
+                # Civic Address Reference Guide
+                addr_list = st.session_state.get("address_data", [])
+                if addr_list:
+                    addr_df = pd.DataFrame(addr_list)
+                    csv_addr = addr_df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📖 Download Civic Address Reference",
+                        data=csv_addr,
+                        file_name=f"Addresses_{selected_customer['companyName'].replace(' ', '_')}.csv",
+                        mime='text/csv',
+                        use_container_width=True
+                    )
+                else:
+                    st.button("📖 No Civic Addresses Found", disabled=True, use_container_width=True)
 
             # PHASE 4: Upload & Validation
             st.divider()
@@ -232,7 +253,6 @@ else:
             
             if uploaded_file is not None:
                 df = pd.read_csv(uploaded_file)
-                
                 if set(EXPECTED_COLUMNS).issubset(df.columns):
                     errors = []
                     for _, row in df.iterrows():
@@ -244,19 +264,11 @@ else:
                         errors.append(", ".join(row_errs) if row_errs else "Valid")
                     
                     df['ValidationStatus'] = errors
+                    st.dataframe(df.style.applymap(lambda v: f'color: {"red" if v != "Valid" else "green"}', subset=['ValidationStatus']), use_container_width=True)
                     
-                    st.dataframe(
-                        df.style.applymap(lambda v: f'color: {"red" if v != "Valid" else "green"}', subset=['ValidationStatus']), 
-                        use_container_width=True
-                    )
-                    
-                    all_valid = (df['ValidationStatus'] == 'Valid').all()
-                    
-                    if all_valid:
-                        st.success(f"🎉 Ready to sync {len(df)} users to {selected_customer['companyName']} via {conn_type}")
+                    if (df['ValidationStatus'] == 'Valid').all():
+                        st.success(f"🎉 Ready to sync {len(df)} users.")
                         if st.button("🚀 Start Bulk Sync"):
                             st.write(f"Executing Sync on domain: {selected_domain}...")
-                    else:
-                        st.error("Validation failed. Please fix the red rows in your CSV and re-upload.")
                 else:
                     st.error(f"Missing Columns! CSV must contain: {EXPECTED_COLUMNS}")
