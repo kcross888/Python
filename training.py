@@ -100,7 +100,7 @@ def get_all_customers():
                     info = item.get("accountInfo", {})
                     
                     # Extract values from the 'info' sub-dictionary
-                    c_name = info.get("companyname")
+                    c_name = info.get("companyName")
                     acc_id = info.get("accountId")
                     
                     customer_list.append({
