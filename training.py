@@ -6,6 +6,13 @@ import requests
 
 # https://python-v7byjeughqnzi69czd3tve.streamlit.app/
 
+# Set the page configuration for a better user experience
+st.set_page_config(
+    page_title="iPilot Sync Tool",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 # 1. Create a label/header
 st.title("NWN Collaboration Team iPilot and Teams Bulk Provision Tool")
 st.write("Click the button in the sidebar to upload and view an import file.")
@@ -35,6 +42,56 @@ def is_valid_phone(phone):
 
 def is_valid_account(acc_type):
     return str(acc_type).strip().lower() in ['user', 'resource']
+
+# 1. Define the Dialog (The Pop-up)
+@st.dialog("Connect to iPilot")
+def login_dialog():
+    st.write("Please enter your iPilot credentials to authenticate.")
+    
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    
+    if st.button("Login"):
+        if username and password:
+            with st.spinner("Authenticating..."):
+                # 2. The REST API Call for the Token
+                # Replace the URL with your actual iPilot token endpoint
+                api_url = "https://api.nuwave.com/v1/oauth2/authorize?instance=carousel" 
+                payload = {
+                    "username": username, 
+                    "password": password
+                    }
+                headers = {
+                    "x-api-key": "sUxNytmtwt5u8uZrwTbtx4qo7Mxy279x88cG0tFs",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "accept": "application/json"
+                }
+                
+                try:
+                # Use 'data=' if the API expects form-encoded, or 'json=' if it expects JSON
+                # Based on your "Content-Type" key, 'data=' is likely what it wants
+                    response = requests.post(api_url, data=payload, headers=headers,timeout=10)
+                
+                    if response.status_code == 200:
+                        response_data = response.json()
+                        token = response_data.get("access_token")
+                        
+                        # Store information in session state
+                        st.session_state["api_token"] = token
+                        
+                        # Update payload for your debug view
+                        payload["Content-Type"] = "application/json" 
+                        st.session_state["last_payload"] = payload # Save it to show on main page
+                        
+                        st.success("Successfully authenticated!")
+                        st.rerun() 
+                    else:
+                        st.error(f"Login failed: {response.status_code} - {response.text}")
+                        
+                except Exception as e:
+                    st.error(f"Connection error: {e}")
+        else:
+            st.warning("Please enter both username and password.")
 
 def get_ipilot_accounts():
     """
@@ -100,10 +157,22 @@ if uploaded_file is not None:
 
     if all_valid:
         st.success("🎉 All rows are valid! You can now proceed to iPilot.")
-        
-        # --- NEW: Conditional UI for API Interaction ---
-        if st.button("Connect to iPilot"):
-            # When clicked, fetch the accounts
+        # 3. Only show the connect button if validation passed
+        if "api_token" not in st.session_state:
+            if st.button("Connect to iPilot"):
+                login_dialog()
+        else:
+            st.success("Authenticated with iPilot")
+            
+            # --- DEBUG SECTION ---
+            with st.expander("Developer Debug: View Payload & Token"):
+                st.write("### Last Auth Payload")
+                st.json(st.session_state.get("last_payload"))
+                st.write("### Active Token")
+                st.code(st.session_state["api_token"])
+            # ---------------------
+
+        # Proceed with showing the account selection dropdown here
             with st.spinner("Fetching accounts from iPilot..."):
                 accounts = get_ipilot_accounts()
                 
