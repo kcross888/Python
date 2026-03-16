@@ -47,32 +47,22 @@ def is_valid_account(acc_type):
 
 # --- JSON Parser with Error Handling ---
 def parse_ipilot_response(response_text):
-    """
-    Parses the complex iPilot JSON response to find the real 
-    error message hidden inside a 200 OK.
-    """
     try:
         data = json.loads(response_text)
+        # Get the nested status, or default to 200 if it's a "clean" success 
+        # that doesn't include an internal status key.
+        inner_status = data.get("statusCode", 200) 
         
-        # Check if there's a nested statusCode (e.g., 400 inside a 200)
-        inner_status = data.get("statusCode", 200)
+        msg = data.get("errors", {}).get("message") or data.get("status", "Operation Successful")
         
-        # Extract the specific error message
-        # Priority 1: The 'errors' message
-        # Priority 2: The 'status' string
-        msg = data.get("errors", {}).get("message") or data.get("status", "Unknown Error")
-        
-        # Check for specific number failures
         invalid_map = data.get("data", {}).get("invalid_numbers", {})
         if invalid_map:
-            # e.g., "2762920165: Invalid Provision Type"
             details = " | ".join([f"{num}: {reason}" for num, reason in invalid_map.items()])
             msg = f"{msg} ({details})"
             
-        return inner_status, msg
+        return int(inner_status), msg
     except:
-        # If it's not JSON or parsing fails, return as-is
-        return 200, response_text
+        return 200, "Response received, but body was not in JSON format."
 
 # --- API Logic ---
 @st.dialog("Connect to iPilot")
@@ -367,7 +357,7 @@ else:
                         if st.button("🚀 Start Bulk Sync"):
                             results = []
                             domain_count = len(st.session_state.get("raw_domains", []))
-                            
+
                             # 1. UI Feedback for starting
                             status_msg = st.empty()
                             progress_bar = st.progress(0)
@@ -399,14 +389,22 @@ else:
                             
                             # Build a plain-text log for the engineer
                             log_content = "IPILOT BULK SYNC LOG\n" + "="*30 + "\n"
+
+                            # Track final counts based on the parsed results
+                            final_success_count = 0
+                            final_fail_count = 0
+
                             for _, r in results_df.iterrows():
                                 # Parse the raw response to see if there's a hidden 400
                                 actual_code, clean_msg = parse_ipilot_response(r['Response'])
                                 
-                                # Determine the display status
-                                display_status = r['Status']
-                                if actual_code != 200:
+                                # Determine the logical status based on the internal response code
+                                if actual_code in [200, 201, 202]:
+                                    display_status = "Success"
+                                    final_success_count += 1
+                                else:
                                     display_status = "Failed"
+                                    final_fail_count += 1
                                     
                                 log_content += f"[{display_status}] {r['User']} | Code: {actual_code} | Reason: {clean_msg}\n"
 
@@ -430,8 +428,12 @@ else:
                             # Visual Statistics
                             s_count = len(results_df[results_df['Status'] == "Success"])
                             f_count = len(results_df[results_df['Status'] != "Success"])
+                            # UPDATED METRICS: Using the counts derived from the parsed JSON
                             c1, c2 = st.columns(2)
-                            c1.metric("Success", s_count)
-                            c2.metric("Failed/Error", f_count, delta_color="inverse")
+                            c1.metric("Success", final_success_count)
+                            c2.metric("Failed/Error", final_fail_count, delta_color="inverse")
+
+                            if final_fail_count == 0:
+                                st.balloons()
                 else:
                     st.error(f"Missing Columns! CSV must contain: {EXPECTED_COLUMNS}")
