@@ -4,6 +4,7 @@ import re
 import uuid
 import requests
 import concurrent.futures
+import json
 
 # Set the page configuration
 st.set_page_config(
@@ -43,6 +44,35 @@ def is_valid_phone(phone):
 
 def is_valid_account(acc_type):
     return str(acc_type).strip().lower() in ['user', 'resource']
+
+# --- JSON Parser with Error Handling ---
+def parse_ipilot_response(response_text):
+    """
+    Parses the complex iPilot JSON response to find the real 
+    error message hidden inside a 200 OK.
+    """
+    try:
+        data = json.loads(response_text)
+        
+        # Check if there's a nested statusCode (e.g., 400 inside a 200)
+        inner_status = data.get("statusCode", 200)
+        
+        # Extract the specific error message
+        # Priority 1: The 'errors' message
+        # Priority 2: The 'status' string
+        msg = data.get("errors", {}).get("message") or data.get("status", "Unknown Error")
+        
+        # Check for specific number failures
+        invalid_map = data.get("data", {}).get("invalid_numbers", {})
+        if invalid_map:
+            # e.g., "2762920165: Invalid Provision Type"
+            details = " | ".join([f"{num}: {reason}" for num, reason in invalid_map.items()])
+            msg = f"{msg} ({details})"
+            
+        return inner_status, msg
+    except:
+        # If it's not JSON or parsing fails, return as-is
+        return 200, response_text
 
 # --- API Logic ---
 @st.dialog("Connect to iPilot")
@@ -130,22 +160,32 @@ def format_phone(phone):
     digits = re.sub(r'\D', '', str(phone))
     return digits[-10:] if len(digits) >= 10 else digits
 
-def get_payload_type(domain_type, account_type):
-    """Determines the specific 'type' string based on the domain and account."""
+def get_payload_type(domain_type, account_type, domain_count):
+    """
+    Determines the specific 'type' string based on:
+    1. Account Type (User vs Resource)
+    2. Domain Count (1 vs 2)
+    3. Selected Domain Type (OC vs DRaaS)
+    """
     acc_type_upper = str(account_type).upper()
     
-    # Logic for 'User' accounts
     if acc_type_upper == "USER":
-        if domain_type == "Operator Connect":
-            return "OC USER AA & CQ"
-        elif domain_type == "DRaaS":
-            return "DR USER"
+        # Scenario A: Customer only has ONE domain (must be OC)
+        if domain_count == 1:
+            return "USER AA & CQ"
+        
+        # Scenario B: Customer has BOTH OC and DRaaS
+        else:
+            if domain_type == "Operator Connect":
+                return "OC USER AA & CQ"
+            elif domain_type == "DRaaS":
+                return "DR USER"
     
-    # Fallback/Resource logic (placeholder until confirmed)
+    # Fallback for non-user types or unexpected scenarios
     return "USER AA & CQ"
 
 # API Sync Logic
-def send_sync_request(row, account_id, domain_val, domain_type, token):
+def send_sync_request(row, account_id, domain_val, domain_type, domain_count, token):
     """Handles a single POST request to the iPilot API without UPN in payload."""
     api_url = f"https://api.nuwave.com/v1/msteams/{domain_val}/users?instance=carousel"
     
@@ -160,7 +200,7 @@ def send_sync_request(row, account_id, domain_val, domain_type, token):
         "user": {
             "telephoneNumber": format_phone(row['TeamsVoicePhoneNumber']),
             "civicAddressId": row['civicAddressId'],
-            "type": get_payload_type(domain_type, row['TypeofAccount'])
+            "type": get_payload_type(domain_type, row['TypeofAccount'], domain_count)
         }
     }
 
@@ -326,6 +366,7 @@ else:
                         st.success(f"🎉 Ready to sync {len(df)} users.")
                         if st.button("🚀 Start Bulk Sync"):
                             results = []
+                            domain_count = len(st.session_state.get("raw_domains", []))
                             
                             # 1. UI Feedback for starting
                             status_msg = st.empty()
@@ -338,7 +379,13 @@ else:
                             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                                 future_to_user = {
                                     executor.submit(
-                                        send_sync_request, row, target_id, selected_domain, conn_type, st.session_state["api_token"]
+                                        send_sync_request, 
+                                        row, 
+                                        target_id, 
+                                        selected_domain, 
+                                        conn_type, 
+                                        domain_count, 
+                                        st.session_state["api_token"]
                                     ): row for _, row in df.iterrows()
                                 }
 
@@ -353,7 +400,15 @@ else:
                             # Build a plain-text log for the engineer
                             log_content = "IPILOT BULK SYNC LOG\n" + "="*30 + "\n"
                             for _, r in results_df.iterrows():
-                                log_content += f"[{r['Status']}] {r['User']} | Status: {r['Code']} | Details: {r['Response']}\n"
+                                # Parse the raw response to see if there's a hidden 400
+                                actual_code, clean_msg = parse_ipilot_response(r['Response'])
+                                
+                                # Determine the display status
+                                display_status = r['Status']
+                                if actual_code != 200:
+                                    display_status = "Failed"
+                                    
+                                log_content += f"[{display_status}] {r['User']} | Code: {actual_code} | Reason: {clean_msg}\n"
 
                             status_msg.success("✅ Sync Operation Complete")
                             
