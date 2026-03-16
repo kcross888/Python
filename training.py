@@ -210,6 +210,27 @@ def send_sync_request(row, account_id, domain_val, domain_type, domain_count, to
             "Response": str(e)
         }
 
+# --- Powershell 7 checker for Windows users ---
+def check_powershell_7():
+    """Checks if PowerShell 7 (pwsh) is installed and available in the PATH."""
+    try:
+        # We look specifically for 'pwsh' which is the PS7+ executable
+        result = subprocess.run(
+            ["pwsh", "-Command", "$PSVersionTable.PSVersion.Major"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            version = result.stdout.strip()
+            if int(version) >= 7:
+                return True, f"PowerShell {version} detected."
+        return False, "PowerShell 7 not detected (found legacy or version too low)."
+    except FileNotFoundError:
+        return False, "PowerShell 7 (pwsh.exe) not found in System PATH."
+    except Exception as e:
+        return False, f"Error checking PowerShell version: {e}"
+
 # --- Sidebar Content ---
 with st.sidebar:
     st.header("Upload & Tools")
@@ -435,5 +456,25 @@ else:
 
                             if final_fail_count == 0:
                                 st.balloons()
+                            
+                            # --- NEW: PowerShell 7 Environment Check ---
+                            st.divider()
+                            st.subheader("🖥️ Environment Verification")
+
+                            with st.spinner("Verifying local environment for Teams operations..."):
+                                has_ps7, ps_msg = check_powershell_7()
+                                
+                                if has_ps7:
+                                    st.success(f"✅ {ps_msg}")
+                                    st.info("Environment is ready for high-performance parallel Teams assignments.")
+                                    # Now show the "Connect to Teams" button
+                                    if st.button("🔑 Connect to Microsoft Teams"):
+                                        # Call your connection function here
+                                        pass
+                                else:
+                                    st.warning(f"⚠️ {ps_msg}")
+                                    st.error("PowerShell 7 is required for parallel assignments. Please install it or use the sequential fallback.")
+                                    if st.button("Download PowerShell 7"):
+                                        st.write("Redirecting to: https://github.com/PowerShell/PowerShell/releases")
                 else:
                     st.error(f"Missing Columns! CSV must contain: {EXPECTED_COLUMNS}")
