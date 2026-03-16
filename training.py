@@ -80,9 +80,10 @@ def login_dialog():
                         st.session_state["api_token"] = token
                         
                         # Update payload for your debug view
-                        payload["Content-Type"] = "application/json" 
+                        headers["Content-Type"] = "application/json" 
                         st.session_state["last_payload"] = payload # Save it to show on main page
-                        
+                        st.session_state["last_headers"] = headers # Save it to show on main page
+
                         st.success("Successfully authenticated!")
                         st.rerun() 
                     else:
@@ -94,13 +95,31 @@ def login_dialog():
             st.warning("Please enter both username and password.")
 
 def get_ipilot_accounts():
-    """
-    In a real scenario, you'd use:
-    response = requests.get("https://api.ipilot.io/v1/accounts", headers=headers)
-    return response.json()
-    """
-    # Mock data for learning:
-    return ["Enterprise_Main_Tenant", "Testing_Lab_01", "Region_West_Voice"]
+
+    # 1. Retrieve the token from session state
+    token = st.session_state.get("api_token")
+
+    # 2. Define the headers
+    headers = {
+        "Authorization": f"Bearer {token}",  # Most APIs expect 'Bearer ' followed by the token
+        "x-api-key": "sUxNytmtwt5u8uZrwTbtx4qo7Mxy279x88cG0tFs",
+        "accept": "application/json",
+        "Content-Type": "application/json"
+    }
+
+    # 3. Now make the call (the variable 'headers' now exists!)
+    api_url = "https://api.nuwave.com/v1/accounts/customer?instance=carousel&limit=500"
+
+    try:
+        response = requests.get(api_url, headers=headers)
+        
+        if response.status_code == 200:
+            accounts_data = response.json()
+            # Process your accounts here...
+        else:
+            st.error(f"Failed to fetch accounts: {response.status_code}")
+    except Exception as e:
+        st.error(f"An error occurred: {e}")
 
 # 3. Logic to handle the file once it is uploaded
 if uploaded_file is not None:
@@ -168,6 +187,7 @@ if uploaded_file is not None:
             with st.expander("Developer Debug: View Payload & Token"):
                 st.write("### Last Auth Payload")
                 st.json(st.session_state.get("last_payload"))
+                st.json(st.session_state.get("last_headers"))
                 st.write("### Active Token")
                 st.code(st.session_state["api_token"])
             # ---------------------
