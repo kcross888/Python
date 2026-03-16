@@ -104,7 +104,7 @@ def get_ipilot_accounts():
     # 2. Prepare the request
     url = "https://api.nuwave.com/v1/accounts/customer?instance=carousel&limit=500"
     headers = {
-        "x-access-token": f"Bearer {token}",
+        "x-access-token": token,
         "x-api-key": "sUxNytmtwt5u8uZrwTbtx4qo7Mxy279x88cG0tFs",
         "accept": "application/json"
     }
