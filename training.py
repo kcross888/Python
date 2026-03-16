@@ -91,37 +91,48 @@ def get_all_customers():
         res1 = requests.get(url1, headers=headers)
         log_api_call("GET", url1, res1)
         
-        for item in res1.json():
-            info = item.get("accountInfo", {})
-            customer_list.append({
-                "companyName": info.get("accountInfo.companyname"),
-                "accountId": info.get("accountInfo.accountId"),
-                "resellerId": ""
-            })
+        # Verify we got a successful list back
+        if res1.status_code == 200:
+            data1 = res1.json()
+            if isinstance(data1, list):
+                for item in data1:
+                    info = item.get("accountInfo", {})
+                    # DO NOT use dot notation in .get()
+                    customer_list.append({
+                        "companyName": info.get("companyname"),
+                        "accountId": info.get("accountId"),
+                        "resellerId": ""
+                    })
 
-        # # 2. Resellers
-        # for r_id in ['4', '2', '1']:
-        #     url_r = f"{base_url}/site/resellerId/{r_id}?instance=carousel&limit=500"
-        #     res_r = requests.get(url_r, headers=headers)
-        #     log_api_call("GET", url_r, res_r)
+        # 2. Resellers (4, 2, 1)
+        for r_id in ['4', '2', '1']:
+            url_r = f"{base_url}/site/resellerId/{r_id}?instance=carousel&limit=500"
+            res_r = requests.get(url_r, headers=headers)
+            log_api_call("GET", url_r, res_r) # This will overwrite the previous log
             
-        #     data = res_r.json()
-        #     for item in data.get("customers", []):
-        #         customer_list.append({
-        #             "companyName": item.get("customerName"),
-        #             "accountId": item.get("customerId"),
-        #             "resellerId": r_id
-        #         })
+            if res_r.status_code == 200:
+                data_r = res_r.json()
+                # These responses have 'customers' as a list inside a dictionary
+                for item in data_r.get("customers", []):
+                    customer_list.append({
+                        "companyName": item.get("customerName"),
+                        "accountId": item.get("customerId"),
+                        "resellerId": r_id
+                    })
 
+        # Deduplication
         unique_customers = {}
         for cust in customer_list:
-            acc_id = cust["accountId"]
+            acc_id = cust.get("accountId")
             if acc_id and acc_id not in unique_customers:
                 unique_customers[acc_id] = cust
 
-        return sorted(unique_customers.values(), key=lambda x: (x['companyName'] or "").lower())
+        # Safe sorting: handles if companyName is None
+        return sorted(unique_customers.values(), key=lambda x: str(x.get('companyName') or "").lower())
+
     except Exception as e:
-        st.error(f"Error building customer cache: {e}")
+        # If this happens, it will show on the main screen
+        st.error(f"Critical error in get_all_customers: {e}")
         return []
 
 # --- Sidebar Content ---
