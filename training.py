@@ -216,7 +216,6 @@ if uploaded_file is not None:
             # If data is list of dicts: [{'accountName': 'ACME', 'accountId': '123'}, ...]
             account_list = st.session_state['ipilot_accounts']
             
-            # This allows the user to see names, but you can access the full object
             selected_account = st.selectbox(
                 "Select the iPilot Account:",
                 options=account_list,
