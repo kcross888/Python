@@ -96,11 +96,16 @@ def get_all_customers():
             data1 = res1.json()
             if isinstance(data1, list):
                 for item in data1:
+                    # 'item' is the whole object. 'info' is the 'accountInfo' sub-dict.
                     info = item.get("accountInfo", {})
-                    # DO NOT use dot notation in .get()
+                    
+                    # Extract values from the 'info' sub-dictionary
+                    c_name = info.get("companyname")
+                    acc_id = info.get("accountId")
+                    
                     customer_list.append({
-                        "companyName": info.get("companyname"),
-                        "accountId": info.get("accountId"),
+                        "companyName": c_name if c_name else f"Unknown ({acc_id})",
+                        "accountId": acc_id,
                         "resellerId": ""
                     })
 
@@ -112,11 +117,14 @@ def get_all_customers():
             
             if res_r.status_code == 200:
                 data_r = res_r.json()
-                # These responses have 'customers' as a list inside a dictionary
+                # Reseller data uses 'customerName' and 'customerId' directly
                 for item in data_r.get("customers", []):
+                    c_name = item.get("customerName")
+                    acc_id = item.get("customerId")
+                    
                     customer_list.append({
-                        "companyName": item.get("customerName"),
-                        "accountId": item.get("customerId"),
+                        "companyName": c_name if c_name else f"Unknown ({acc_id})",
+                        "accountId": acc_id,
                         "resellerId": r_id
                     })
 
