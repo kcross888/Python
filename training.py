@@ -99,19 +99,19 @@ def get_all_customers():
                 "resellerId": ""
             })
 
-        # 2. Resellers
-        for r_id in ['4', '2', '1']:
-            url_r = f"{base_url}/site/resellerId/{r_id}?instance=carousel&limit=500"
-            res_r = requests.get(url_r, headers=headers)
-            log_api_call("GET", url_r, res_r)
+        # # 2. Resellers
+        # for r_id in ['4', '2', '1']:
+        #     url_r = f"{base_url}/site/resellerId/{r_id}?instance=carousel&limit=500"
+        #     res_r = requests.get(url_r, headers=headers)
+        #     log_api_call("GET", url_r, res_r)
             
-            data = res_r.json()
-            for item in data.get("customers", []):
-                customer_list.append({
-                    "companyName": item.get("customerName"),
-                    "accountId": item.get("customerId"),
-                    "resellerId": r_id
-                })
+        #     data = res_r.json()
+        #     for item in data.get("customers", []):
+        #         customer_list.append({
+        #             "companyName": item.get("customerName"),
+        #             "accountId": item.get("customerId"),
+        #             "resellerId": r_id
+        #         })
 
         unique_customers = {}
         for cust in customer_list:
