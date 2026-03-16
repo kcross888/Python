@@ -156,10 +156,56 @@ if uploaded_file is not None:
                     )
                     
                     if selected_customer:
-                        st.info(f"Targeting: **{selected_customer['companyName']}** | Reseller ID: {selected_customer['resellerId']}")
+                        target_id = selected_customer['accountId']
+                        target_reseller = selected_customer['reseller_id'] # Note: reseller_id from previous step
                         
-                        if st.button("Start Sync"):
-                            st.write("Sync logic would go here...")
+                        # 1. Fetch Domains if they aren't already in session state for THIS customer
+                        if st.session_state.get("current_customer_id") != target_id:
+                            with st.spinner("Fetching Teams Domains..."):
+                                token = st.session_state.get("api_token")
+                                headers = {
+                                    "x-access-token": token,
+                                    "x-api-key": "sUxNytmtwt5u8uZrwTbtx4qo7Mxy279x88cG0tFs",
+                                    "accept": "application/json"
+                                }
+                                
+                                domain_url = f"https://api.nuwave.com/v1/msteams?instance=carousel&customerId={target_id}"
+                                try:
+                                    domain_res = requests.get(domain_url, headers=headers).json()
+                                    # Extract the list of domains from the 'domains' key
+                                    st.session_state["raw_domains"] = domain_res.get("domains", [])
+                                    st.session_state["current_customer_id"] = target_id
+                                except Exception as e:
+                                    st.error(f"Failed to fetch domains: {e}")
+                                    st.session_state["raw_domains"] = []
+
+                        # 2. Logic to map "Operator Connect" and "DRaaS"
+                        raw_domains = st.session_state.get("raw_domains", [])
+                        domain_mapping = {}
+
+                        for d in raw_domains:
+                            # Check if it's a GUID (Operator Connect)
+                            if is_valid_uuid(d):
+                                domain_mapping["Operator Connect"] = d
+                            # Check if it starts with NWNMS (DRaaS)
+                            elif str(d).startswith("NWNMS"):
+                                domain_mapping["DRaaS"] = d
+
+                        # 3. Present the Domain Dropdown if we found matches
+                        if domain_mapping:
+                            connection_type = st.selectbox(
+                                "Select Connection Type:",
+                                options=list(domain_mapping.keys())
+                            )
+                            
+                            selected_domain = domain_mapping[connection_type]
+                            st.info(f"Selected Domain: `{selected_domain}`")
+                            
+                            # Now you are ready to Sync
+                            if st.button("Start Sync"):
+                                st.write(f"Initiating sync for {target_id} using {selected_domain}...")
+                        else:
+                            st.warning("No compatible Operator Connect or DRaaS domains found for this customer.")
                 
                 with st.expander("Developer Debug"):
                     st.json(st.session_state.get("last_headers"))
