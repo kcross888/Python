@@ -3,6 +3,7 @@ import pandas as pd
 import re
 import uuid
 import requests
+import concurrent.futures
 
 # Set the page configuration
 st.set_page_config(
@@ -44,7 +45,6 @@ def is_valid_account(acc_type):
     return str(acc_type).strip().lower() in ['user', 'resource']
 
 # --- API Logic ---
-
 @st.dialog("Connect to iPilot")
 def login_dialog():
     st.write("Please enter your iPilot credentials to authenticate.")
@@ -123,6 +123,62 @@ def get_all_customers():
     except Exception as e:
         st.error(f"Error building customer cache: {e}")
         return []
+
+# API data formatting helpers
+def format_phone(phone):
+    """Extracts exactly the last 10 digits from the phone string."""
+    digits = re.sub(r'\D', '', str(phone))
+    return digits[-10:] if len(digits) >= 10 else digits
+
+def get_payload_type(domain_type, account_type):
+    """Determines the specific 'type' string based on the domain and account."""
+    acc_type_upper = str(account_type).upper()
+    
+    # Logic for 'User' accounts
+    if acc_type_upper == "USER":
+        if domain_type == "Operator Connect":
+            return "OC USER AA & CQ"
+        elif domain_type == "DRaaS":
+            return "DR USER"
+    
+    # Fallback/Resource logic (placeholder until confirmed)
+    return "USER AA & CQ"
+
+# API Sync Logic
+def send_sync_request(row, account_id, domain_val, domain_type, token):
+    """Handles a single POST request to the iPilot API without UPN in payload."""
+    api_url = f"https://api.nuwave.com/v1/msteams/{domain_val}/users?instance=carousel"
+    
+    headers = {
+        "x-access-token": token,
+        "x-api-key": "sUxNytmtwt5u8uZrwTbtx4qo7Mxy279x88cG0tFs",
+        "Content-Type": "application/json"
+    }
+
+    # Construct Payload - UPN REMOVED to prevent iPilot errors
+    payload = {
+        "user": {
+            "telephoneNumber": format_phone(row['TeamsVoicePhoneNumber']),
+            "civicAddressId": row['civicAddressId'],
+            "type": get_payload_type(domain_type, row['TypeofAccount'])
+        }
+    }
+
+    try:
+        res = requests.post(api_url, json=payload, headers=headers, timeout=20)
+        return {
+            "User": row['UserPrincipalName'], # Kept for logs only
+            "Status": "Success" if res.status_code in [200, 201, 202] else "Failed",
+            "Code": res.status_code,
+            "Response": res.text
+        }
+    except Exception as e:
+        return {
+            "User": row['UserPrincipalName'], # Kept for logs only
+            "Status": "Error", 
+            "Code": "N/A", 
+            "Response": str(e)
+        }
 
 # --- Sidebar Content ---
 with st.sidebar:
@@ -269,6 +325,58 @@ else:
                     if (df['ValidationStatus'] == 'Valid').all():
                         st.success(f"🎉 Ready to sync {len(df)} users.")
                         if st.button("🚀 Start Bulk Sync"):
-                            st.write(f"Executing Sync on domain: {selected_domain}...")
+                            results = []
+                            
+                            # 1. UI Feedback for starting
+                            status_msg = st.empty()
+                            progress_bar = st.progress(0)
+                            status_msg.info(f"🚀 Initializing parallel sync for {len(df)} users...")
+
+                            # 2. Parallel Execution
+                            # conn_type (DRaaS/Operator Connect) and selected_domain (GUID/NWNMS) 
+                            # must be available from your existing dropdowns
+                            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                                future_to_user = {
+                                    executor.submit(
+                                        send_sync_request, row, target_id, selected_domain, conn_type, st.session_state["api_token"]
+                                    ): row for _, row in df.iterrows()
+                                }
+
+                                for i, future in enumerate(concurrent.futures.as_completed(future_to_user)):
+                                    results.append(future.result())
+                                    progress_bar.progress((i + 1) / len(df))
+                                    status_msg.info(f"Processing... Completed {i+1} of {len(df)}")
+
+                            # 3. Create Log & Review UI
+                            results_df = pd.DataFrame(results)
+                            
+                            # Build a plain-text log for the engineer
+                            log_content = "IPILOT BULK SYNC LOG\n" + "="*30 + "\n"
+                            for _, r in results_df.iterrows():
+                                log_content += f"[{r['Status']}] {r['User']} | Status: {r['Code']} | Details: {r['Response']}\n"
+
+                            status_msg.success("✅ Sync Operation Complete")
+                            
+                            # 4. Results Display
+                            st.divider()
+                            st.subheader("📋 Provisioning Results")
+                            
+                            # The Log Textbox
+                            st.text_area("Detailed Output Log", value=log_content, height=300)
+                            
+                            # Download Button
+                            st.download_button(
+                                label="💾 Download Sync Log",
+                                data=log_content,
+                                file_name=f"SyncLog_{selected_customer['companyName']}.txt",
+                                mime='text/plain'
+                            )
+                            
+                            # Visual Statistics
+                            s_count = len(results_df[results_df['Status'] == "Success"])
+                            f_count = len(results_df[results_df['Status'] != "Success"])
+                            c1, c2 = st.columns(2)
+                            c1.metric("Success", s_count)
+                            c2.metric("Failed/Error", f_count, delta_color="inverse")
                 else:
                     st.error(f"Missing Columns! CSV must contain: {EXPECTED_COLUMNS}")
