@@ -5,6 +5,7 @@ import uuid
 import requests
 import concurrent.futures
 import json
+import subprocess
 
 # Set the page configuration
 st.set_page_config(
