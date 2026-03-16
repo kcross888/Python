@@ -80,8 +80,8 @@ def get_all_customers():
         for item in res:
             info = item.get("accountInfo", {})
             customer_list.append({
-                "companyName": info.get("companyname"),
-                "accountId": info.get("accountId"),
+                "companyName": info.get("accountInfo.companyname"),
+                "accountId": info.get("accountInfo.accountId"),
                 "resellerId": ""
             })
 
