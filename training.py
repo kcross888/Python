@@ -157,7 +157,7 @@ if uploaded_file is not None:
                     
                     if selected_customer:
                         target_id = selected_customer['accountId']
-                        target_reseller = selected_customer['reseller_id'] # Note: reseller_id from previous step
+                        target_reseller = selected_customer['resellerId'] # Note: resellerId from previous step
                         
                         # 1. Fetch Domains if they aren't already in session state for THIS customer
                         if st.session_state.get("current_customer_id") != target_id:
