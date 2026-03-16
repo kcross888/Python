@@ -18,7 +18,7 @@ def log_api_call(method, url, response):
         "Method": method,
         "URL": url,
         "Status": response.status_code,
-        "Body": response.text  # Plain text response
+        "Body": response.text 
     }
     st.session_state["api_debug_log"] = log_entry
 
@@ -63,7 +63,7 @@ def login_dialog():
                 }
                 try:
                     response = requests.post(api_url, data=payload, headers=headers, timeout=10)
-                    log_api_call("POST", api_url, response) # Log to console
+                    log_api_call("POST", api_url, response)
                     
                     if response.status_code == 200:
                         token = response.json().get("access_token")
@@ -129,13 +129,18 @@ with st.sidebar:
     st.header("Upload & Tools")
     uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
     
+    if st.button("🔄 Clear All Caches"):
+        for key in ["customer_cache", "raw_domains", "current_customer_id", "api_token"]:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.rerun()
+
     st.divider()
     st.header("🪟 API Debug Console")
     if "api_debug_log" in st.session_state:
         log = st.session_state["api_debug_log"]
-        st.write(f"**Last Method:** {log['Method']}")
-        st.write(f"**Status:** {log['Status']}")
-        st.text_area("Plain Text Response:", value=log['Body'], height=300)
+        st.write(f"**Method:** {log['Method']} | **Status:** {log['Status']}")
+        st.text_area("Response Body:", value=log['Body'], height=300)
     else:
         st.info("No API calls made yet.")
 
@@ -178,30 +183,49 @@ if uploaded_file is not None:
                 )
                 
                 if selected_customer:
-                    # Fetch Domains Logic
                     target_id = selected_customer['accountId']
+                    
+                    # FETCH DOMAINS Logic
                     if st.session_state.get("current_customer_id") != target_id:
                         token = st.session_state.get("api_token")
-                        headers = {"x-access-token": token, "x-api-key": "sUxNytmtwt5u8uZrwTbtx4qo7Mxy279x88cG0tFs", "accept": "application/json"}
+                        headers = {
+                            "x-access-token": token, 
+                            "x-api-key": "sUxNytmtwt5u8uZrwTbtx4qo7Mxy279x88cG0tFs", 
+                            "accept": "application/json"
+                        }
                         d_url = f"https://api.nuwave.com/v1/msteams?instance=carousel&customerId={target_id}"
                         
-                        d_res = requests.get(d_url, headers=headers)
-                        log_api_call("GET", d_url, d_res) # Log domain call
-                        
-                        # Handle list vs dict response
-                        resp_json = d_res.json()
-                        st.session_state["raw_domains"] = resp_json if isinstance(resp_json, list) else resp_json.get("domains", [])
-                        st.session_state["current_customer_id"] = target_id
+                        try:
+                            d_res = requests.get(d_url, headers=headers)
+                            log_api_call("GET", d_url, d_res)
+                            
+                            resp_json = d_res.json()
+                            # Parsing logic for List-wrapped Dictionary: [{ "domains": [...] }]
+                            if isinstance(resp_json, list) and len(resp_json) > 0:
+                                st.session_state["raw_domains"] = resp_json[0].get("domains", [])
+                            else:
+                                st.session_state["raw_domains"] = []
+                                
+                            st.session_state["current_customer_id"] = target_id
+                        except Exception as e:
+                            st.error(f"Domain lookup failed: {e}")
 
-                    # Domain Selection
+                    # PRESENT DOMAIN OPTIONS
                     domain_mapping = {}
                     for d in st.session_state.get("raw_domains", []):
-                        if is_valid_uuid(d): domain_mapping["Operator Connect"] = d
-                        elif str(d).startswith("NWNMS"): domain_mapping["DRaaS"] = d
+                        if is_valid_uuid(d): 
+                            domain_mapping["Operator Connect"] = d
+                        elif str(d).startswith("NWNMS"): 
+                            domain_mapping["DRaaS"] = d
 
                     if domain_mapping:
                         conn_type = st.selectbox("Select Connection Type:", options=list(domain_mapping.keys()))
-                        if st.button("Start Sync"):
-                            st.write(f"Syncing {len(df)} users to {domain_mapping[conn_type]}...")
+                        selected_domain = domain_mapping[conn_type]
+                        st.info(f"Targeting Domain: `{selected_domain}`")
+                        
+                        if st.button("🚀 Start Bulk Sync"):
+                            st.write(f"Syncing {len(df)} users to {conn_type}...")
+                    else:
+                        st.warning("No compatible domains found for this customer.")
     else:
         st.error(f"Columns missing: {EXPECTED_COLUMNS}")
