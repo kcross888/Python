@@ -95,31 +95,41 @@ def login_dialog():
             st.warning("Please enter both username and password.")
 
 def get_ipilot_accounts():
-
-    # 1. Retrieve the token from session state
+    # 1. Grab token from session state
     token = st.session_state.get("api_token")
+    if not token:
+        st.error("No token found. Please log in.")
+        return []
 
-    # 2. Define the headers
+    # 2. Prepare the request
+    url = "https://api.nuwave.com/v1/accounts/customer?instance=carousel&limit=500"
     headers = {
-        "Authorization": f"Bearer {token}",  # Most APIs expect 'Bearer ' followed by the token
+        "Authorization": f"Bearer {token}",
         "x-api-key": "sUxNytmtwt5u8uZrwTbtx4qo7Mxy279x88cG0tFs",
-        "accept": "application/json",
-        "Content-Type": "application/json"
+        "accept": "application/json"
     }
 
-    # 3. Now make the call (the variable 'headers' now exists!)
-    api_url = "https://api.nuwave.com/v1/accounts/customer?instance=carousel&limit=500"
-
     try:
-        response = requests.get(api_url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=10)
         
+        # 3. Handle Errors based on Status Code
         if response.status_code == 200:
-            accounts_data = response.json()
-            # Process your accounts here...
+            data = response.json()
+            # Assuming the API returns a list of accounts
+            # Adjust 'accountName' to match the actual key from iPilot
+            return data 
+            
+        elif response.status_code == 400:
+            st.error(f"400 Bad Request: Check your parameters. Server says: {response.text}")
+        elif response.status_code == 401:
+            st.error("401 Unauthorized: Your token might be expired.")
         else:
-            st.error(f"Failed to fetch accounts: {response.status_code}")
+            st.error(f"Error {response.status_code}: {response.text}")
+            
     except Exception as e:
-        st.error(f"An error occurred: {e}")
+        st.error(f"Connection Failed: {str(e)}")
+    
+    return []
 
 # 3. Logic to handle the file once it is uploaded
 if uploaded_file is not None:
@@ -200,12 +210,22 @@ if uploaded_file is not None:
                 st.session_state['ipilot_accounts'] = accounts
 
         # If accounts have been fetched, show the selection box
-        if 'ipilot_accounts' in st.session_state:
+        # --- In your main logic where the dropdown is displayed ---
+        if 'ipilot_accounts' in st.session_state and st.session_state['ipilot_accounts']:
+            # Create a list of names for the dropdown
+            # If data is list of dicts: [{'accountName': 'ACME', 'accountId': '123'}, ...]
+            account_list = st.session_state['ipilot_accounts']
+            
+            # This allows the user to see names, but you can access the full object
             selected_account = st.selectbox(
-                "Select the iPilot Account to target:",
-                options=st.session_state['ipilot_accounts']
+                "Select the iPilot Account:",
+                options=account_list,
+                format_func=lambda x: x.get('accountName', 'Unknown Account')
             )
-            st.info(f"Ready to sync data to: **{selected_account}**")
+            
+            if selected_account:
+                st.info(f"Target Account ID: {selected_account.get('accountId')}")
+                st.info(f"Ready to sync data to: **{selected_account}**")
             
             if st.button("Start Sync"):
                 st.write("Syncing to API... (Logic goes here)")
