@@ -18,7 +18,6 @@ st.set_page_config(
 
 # --- Helper: Debug Console Manager ---
 def log_api_call(method, url, response):
-    """Stores the last API response in session state for the sidebar console."""
     log_entry = {
         "Method": method,
         "URL": url,
@@ -48,7 +47,6 @@ def is_valid_phone(phone):
 def is_valid_account(acc_type):
     return str(acc_type).strip().lower() in ['user', 'resource']
 
-# --- JSON Parser with Error Handling ---
 def parse_ipilot_response(response_text):
     try:
         data = json.loads(response_text)
@@ -69,7 +67,7 @@ def login_dialog():
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     
-    if st.button("Login"):
+    if st.button("Login", use_container_width=True):
         if username and password:
             with st.spinner("Authenticating..."):
                 api_url = "https://api.nuwave.com/v1/oauth2/authorize?instance=carousel" 
@@ -85,7 +83,7 @@ def login_dialog():
                     if response.status_code == 200:
                         token = response.json().get("access_token")
                         st.session_state["api_token"] = token
-                        st.success("Successfully authenticated! Please wait while we fetch customer data...")
+                        st.success("Successfully authenticated!")
                         st.rerun() 
                     else:
                         st.error(f"Login failed: {response.status_code}")
@@ -96,7 +94,6 @@ def fetch_customer_metadata(target_id):
     token = st.session_state.get("api_token")
     headers = {"x-access-token": token, "x-api-key": "sUxNytmtwt5u8uZrwTbtx4qo7Mxy279x88cG0tFs", "accept": "application/json"}
     
-    # Domains
     d_url = f"https://api.nuwave.com/v1/msteams?instance=carousel&customerId={target_id}"
     try:
         d_res = requests.get(d_url, headers=headers, timeout=10)
@@ -106,7 +103,6 @@ def fetch_customer_metadata(target_id):
     except:
         st.session_state["raw_domains"] = []
 
-    # Civic Addresses
     addr_url = f"https://api.nuwave.com/v1/msteams/ocAddress/{target_id}?instance=carousel"
     try:
         addr_res = requests.get(addr_url, headers=headers, timeout=10)
@@ -127,13 +123,7 @@ def get_all_customers():
         if res1.status_code == 200:
             for item in res1.json():
                 info = item.get("accountInfo", {})
-                customer_list.append({"companyName": info.get("companyName"), "accountId": info.get("accountId"), "resellerId": ""})
-        for r_id in ['4', '2', '1']:
-            url_r = f"{base_url}/site/resellerId/{r_id}?instance=carousel&limit=500"
-            res_r = requests.get(url_r, headers=headers)
-            if res_r.status_code == 200:
-                for item in res_r.json().get("customers", []):
-                    customer_list.append({"companyName": item.get("customerName"), "accountId": item.get("customerId"), "resellerId": r_id})
+                customer_list.append({"companyName": info.get("companyName"), "accountId": info.get("accountId")})
         unique_customers = {cust["accountId"]: cust for cust in customer_list if cust["accountId"]}
         return sorted(unique_customers.values(), key=lambda x: (x.get('companyName') or "").lower())
     except Exception as e:
@@ -178,44 +168,31 @@ def check_teams_module():
         return False, f"Environment check failed: {e}"
 
 PS_TEMPLATE = """
-param(
-    [string]$Action,
-    [string]$JsonData
-)
-
+param([string]$Action, [string]$JsonData)
 if ($Action -eq "Login") {
     try {
         Connect-MicrosoftTeams -ErrorAction Stop
-        # Fetch the domain from the first available user
         $firstUser = Get-CsOnlineUser | Select-Object -ExpandProperty UserPrincipalName -First 1
         $tenantDomain = $firstUser.Split('@')[1]
-        
         Write-Host "SUCCESS: Authenticated"
         Write-Host "TENANT_DOMAIN: $tenantDomain"
-    } catch {
-        Write-Host "ERROR: $($_.Exception.Message)"
-    }
+    } catch { Write-Host "ERROR: $($_.Exception.Message)" }
 }
-
 if ($Action -eq "Logout") {
     try {
         Disconnect-MicrosoftTeams -ErrorAction SilentlyContinue
         Write-Host "SUCCESS: Disconnected"
-    } catch {
-        Write-Host "ERROR: $($_.Exception.Message)"
-    }
+    } catch { Write-Host "ERROR: $($_.Exception.Message)" }
 }
-
 if ($Action -eq "BulkSync") {
     $UserData = $JsonData | ConvertFrom-Json
     Connect-MicrosoftTeams 
     Write-Host "Processing $($UserData.Count) records..."
-    # ... [Your RunspacePool logic] ...
 }
 """
 
 def execute_embedded_ps(df, action="BulkSync"):
-    json_payload = df[['UserPrincipalName', 'TeamsVoicePhoneNumber']].to_json(orient='records') if action == "BulkSync" else ""
+    json_payload = df[['UserPrincipalName', 'TeamsVoicePhoneNumber']].to_json(orient='records') if (action == "BulkSync" and df is not None) else ""
     with tempfile.NamedTemporaryFile(suffix=".ps1", delete=False, mode='w', encoding='utf-8') as tmp:
         tmp.write(PS_TEMPLATE)
         tmp_path = tmp.name
@@ -240,8 +217,8 @@ def execute_embedded_ps(df, action="BulkSync"):
 with st.sidebar:
     st.header("Upload & Tools")
     uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
-    if st.button("🔄 Clear All Caches"):
-        for key in ["customer_cache", "raw_domains", "current_customer_id", "api_token", "api_debug_log", "address_data", "teams_authenticated"]:
+    if st.button("🔄 Clear All Caches", use_container_width=True):
+        for key in ["customer_cache", "raw_domains", "current_customer_id", "api_token", "api_debug_log", "address_data", "teams_authenticated", "connected_tenant"]:
             if key in st.session_state: del st.session_state[key]
         st.rerun()
     st.divider()
@@ -252,63 +229,96 @@ with st.sidebar:
         st.text_area("Response Body:", value=log['Body'], height=300)
     else: st.info("No API calls made yet.")
 
-# --- Main Application Logic ---
+# --- Main Application Layout ---
 st.title("NWN Collaboration Team iPilot & Teams Provisioning")
 
-if "api_token" not in st.session_state:
-    st.info("Please connect to iPilot to begin.")
-    if st.button("Connect to iPilot"): login_dialog()
-    st.stop() 
+# Define Panes
+top_pane = st.container()
+st.divider()
+bottom_pane = st.container()
 
-if "customer_cache" not in st.session_state:
-    with st.spinner("Building Customer Cache..."):
-        st.session_state["customer_cache"] = get_all_customers()
+with top_pane:
+    left_col, right_col = st.columns(2)
 
-customers = st.session_state.get("customer_cache", [])
-col1, col2 = st.columns(2)
-
-with col1:
-    selected_customer = st.selectbox("Select the iPilot Account:", options=customers, format_func=lambda x: f"{x['companyName']} (ID: {x['accountId']})")
-
-if selected_customer:
-    target_id = selected_customer['accountId']
-    if st.session_state.get("current_customer_id") != target_id:
-        st.session_state["raw_domains"] = []
-        st.session_state["address_data"] = []
-        with st.spinner(f"Fetching Metadata for {selected_customer['companyName']}..."):
-            fetch_customer_metadata(target_id)
-            st.session_state["current_customer_id"] = target_id
-
-    domain_mapping = {}
-    for d in st.session_state.get("raw_domains", []):
-        if is_valid_uuid(d): domain_mapping["Operator Connect"] = d
-        else: domain_mapping["DRaaS"] = d
-
-    with col2:
-        if domain_mapping:
-            conn_type = st.selectbox("Select Connection Type:", options=list(domain_mapping.keys()))
-            selected_domain = domain_mapping[conn_type]
+    # --- TOP LEFT: iPilot Pane ---
+    with left_col:
+        st.subheader("🌐 iPilot Connection")
+        if "api_token" not in st.session_state:
+            if st.button("🔑 Connect to iPilot", use_container_width=True): login_dialog()
         else:
-            st.warning("No compatible domains found.")
-            selected_domain = None
+            if "customer_cache" not in st.session_state:
+                with st.spinner("Building Customer Cache..."):
+                    st.session_state["customer_cache"] = get_all_customers()
+            
+            customers = st.session_state.get("customer_cache", [])
+            selected_customer = st.selectbox("Select Customer:", options=customers, format_func=lambda x: f"{x['companyName']} (ID: {x['accountId']})")
+            
+            if selected_customer:
+                target_id = selected_customer['accountId']
+                if st.session_state.get("current_customer_id") != target_id:
+                    with st.spinner("Fetching Metadata..."):
+                        fetch_customer_metadata(target_id)
+                        st.session_state["current_customer_id"] = target_id
 
-    # --- Step 1: Download Resources ---
-    st.divider()
-    st.subheader("🛠️ Step 1: Download Engineer Resources")
-    t_col1, t_col2 = st.columns(2)
-    with t_col1:
-        template_df = pd.DataFrame(columns=EXPECTED_COLUMNS)
-        st.download_button(label="📥 Download Blank Template CSV", data=template_df.to_csv(index=False).encode('utf-8'), file_name="Template.csv", mime='text/csv')
-    with t_col2:
-        addr_list = st.session_state.get("address_data", [])
-        if addr_list:
-            st.download_button(label="📖 Download Civic Address Reference", data=pd.DataFrame(addr_list).to_csv(index=False).encode('utf-8'), file_name="Addresses.csv", mime='text/csv')
-        else: st.button("📖 No Civic Addresses Found", disabled=True)
+                domain_mapping = {}
+                for d in st.session_state.get("raw_domains", []):
+                    if is_valid_uuid(d): domain_mapping["Operator Connect"] = d
+                    else: domain_mapping["DRaaS"] = d
+                
+                if domain_mapping:
+                    conn_type = st.selectbox("Connection Type:", options=list(domain_mapping.keys()))
+                    selected_domain = domain_mapping[conn_type]
+                else:
+                    st.warning("No compatible domains found.")
+                    selected_domain = None
 
-    # --- Step 2: Upload & Validate CSV (FIXED: Out of the selected_domain trap) ---
-    st.divider()
-    st.subheader("📊 Step 2: Upload & Validate CSV")
-    
+                # Downloads
+                d_col1, d_col2 = st.columns(2)
+                template_df = pd.DataFrame(columns=EXPECTED_COLUMNS)
+                d_col1.download_button(label="📥 Blank Template", data=template_df.to_csv(index=False).encode('utf-8'), file_name="Template.csv", use_container_width=True)
+                addr_list = st.session_state.get("address_data", [])
+                if addr_list:
+                    d_col2.download_button(label="📖 Address Ref", data=pd.DataFrame(addr_list).to_csv(index=False).encode('utf-8'), file_name="Addresses.csv", use_container_width=True)
+                else:
+                    d_col2.button("📖 No Addresses", disabled=True, use_container_width=True)
+
+    # --- TOP RIGHT: Teams Pane ---
+    with right_col:
+        st.subheader("🖥️ Teams Management")
+        if "teams_module_installed" not in st.session_state:
+            has_mod, mod_msg = check_teams_module()
+            st.session_state["teams_module_installed"] = has_mod
+        
+        if st.session_state.get("teams_module_installed"):
+            if "teams_authenticated" not in st.session_state:
+                if st.button("🔑 Connect to Microsoft Teams", use_container_width=True):
+                    code, log = execute_embedded_ps(None, action="Login")
+                    if "SUCCESS" in log:
+                        st.session_state["teams_authenticated"] = True
+                        match = re.search(r"TENANT_DOMAIN:\s+(\S+)", log)
+                        st.session_state["connected_tenant"] = match.group(1) if match else "Unknown Domain"
+                        st.rerun()
+                    else: st.error("Auth Failed")
+            else:
+                tenant_name = st.session_state.get("connected_tenant", "Unknown Tenant")
+                st.success(f"✅ Connected to: **{tenant_name}**")
+                
+                if st.button("🔌 Disconnect", use_container_width=True):
+                    execute_embedded_ps(None, action="Logout")
+                    for key in ["teams_authenticated", "connected_tenant"]:
+                        if key in st.session_state: del st.session_state[key]
+                    st.rerun()
+                
+                st.divider()
+                if st.button("🚀 Execute Teams Bulk Assignment", type="primary", use_container_width=True):
+                    if "current_df" in st.session_state:
+                        execute_embedded_ps(st.session_state["current_df"], action="BulkSync")
+                    else: st.error("Please upload and validate a CSV first.")
+        else: st.error("Teams Module not found.")
+
+# --- BOTTOM PANE: Data Validation Grid ---
+with bottom_pane:
+    st.subheader("📊 Data Validation Grid")
     if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
         if set(EXPECTED_COLUMNS).issubset(df.columns):
@@ -322,117 +332,18 @@ if selected_customer:
                 errors.append(", ".join(row_errs) if row_errs else "Valid")
             
             df['ValidationStatus'] = errors
+            st.session_state["current_df"] = df
+            st.dataframe(df.style.map(lambda v: f'color: {"red" if v != "Valid" else "green"}', subset=['ValidationStatus']), use_container_width=True)
             
-            # THE DATAFRAME VIEW
-            st.dataframe(df.style.map(lambda v: f'color: {"red" if v != "Valid" else "green"}', subset=['ValidationStatus']), width="stretch")
-            
-            # --- Sync Section ---
             if (df['ValidationStatus'] == 'Valid').all():
-                if selected_domain:
-                    st.success(f"🎉 Ready to sync {len(df)} users.")
-                    if st.button("🚀 Start Bulk Sync"):
-                        results = []
-                        domain_count = len(st.session_state.get("raw_domains", []))
-                        status_msg = st.empty()
-                        progress_bar = st.progress(0)
-                        
-                        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                            future_to_user = {
-                                executor.submit(send_sync_request, row, target_id, selected_domain, conn_type, domain_count, st.session_state["api_token"]): row 
-                                for _, row in df.iterrows()
-                            }
-                            for i, future in enumerate(concurrent.futures.as_completed(future_to_user)):
-                                results.append(future.result())
-                                progress_bar.progress((i + 1) / len(df))
-                                status_msg.info(f"Processing... {i+1}/{len(df)}")
-
-                        results_df = pd.DataFrame(results)
-                        log_content = "IPILOT BULK SYNC LOG\n" + "="*30 + "\n"
-                        s_count, f_count = 0, 0
-                        
-                        for _, r in results_df.iterrows():
-                            actual_code, clean_msg = parse_ipilot_response(r['Response'])
-                            if actual_code in [200, 201, 202]:
-                                s_count += 1
-                                log_content += f"[Success] {r['User']} | Code: {actual_code}\n"
-                            else:
-                                f_count += 1
-                                log_content += f"[Failed] {r['User']} | Code: {actual_code} | Reason: {clean_msg}\n"
-
-                        st.subheader("📋 Provisioning Results")
-                        st.text_area("Detailed Output Log", value=log_content, height=200)
-                        st.download_button(label="💾 Download Sync Log", data=log_content, file_name="SyncLog.txt")
-                        c1, c2 = st.columns(2)
-                        c1.metric("Success", s_count)
-                        c2.metric("Failed", f_count, delta_color="inverse")
-                else:
-                    st.error("Cannot sync: No compatible domain selected above.")
-
-                # --- Teams Environment & Execution Section ---
-                st.divider()
-                st.subheader("🖥️ Teams Management")
-
-                # Check for module once and cache it
-                if "teams_module_installed" not in st.session_state:
-                    has_mod, mod_msg = check_teams_module()
-                    st.session_state["teams_module_installed"] = has_mod
-                    st.session_state["teams_module_msg"] = mod_msg
-
-                if st.session_state.get("teams_module_installed"):
-                    # STEP A: LOGIN
-                    if "teams_authenticated" not in st.session_state:
-                        st.warning("Please authenticate with Microsoft Teams to enable bulk assignments.")
-                        if st.button("🔑 Connect to Microsoft Teams", width="stretch"):
-                            code, log = execute_embedded_ps(None, action="Login")
-                            
-                            if "SUCCESS" in log:
-                                st.session_state["teams_authenticated"] = True
-                                
-                                # Parse the domain from PS output using Regex
-                                import re
-                                match = re.search(r"TENANT_DOMAIN:\s+(\S+)", log)
-                                if match:
-                                    st.session_state["connected_tenant"] = match.group(1)
-                                else:
-                                    st.session_state["connected_tenant"] = "Authenticated (Domain Unknown)"
-                                
-                                st.success("Authenticated successfully!")
-                                st.rerun()
-                            else:
-                                st.error("Authentication failed. Check the logs.")
-
-                    # STEP B: SHOW STATUS, DISCONNECT, & EXECUTE
-                    else:
-                        # Layout for Status and Disconnect
-                        status_col, action_col = st.columns([3, 1])
-                        
-                        tenant_name = st.session_state.get("connected_tenant", "Unknown Tenant")
-                        status_col.success(f"✅ Connected to: **{tenant_name}**")
-                        
-                        # --- Disconnect Button ---
-                        if action_col.button("🔌 Disconnect", width="stretch"):
-                            with st.spinner("Disconnecting from Teams..."):
-                                # Actually run the PS Disconnect command
-                                execute_embedded_ps(None, action="Logout")
-                                
-                                # Clear Teams-specific session state
-                                keys_to_clear = ["teams_authenticated", "connected_tenant"]
-                                for key in keys_to_clear:
-                                    if key in st.session_state:
-                                        del st.session_state[key]
-                                st.rerun()
-
-                        # --- Bulk Assignment Button ---
-                        if st.button("🚀 Execute Teams Phone Number Assignment", type="primary", width="stretch"):
-                            with st.spinner(f"Processing phone number assignments for {tenant_name}..."):
-                                # Pass the existing dataframe (df) to the sync function
-                                code, log = execute_embedded_ps(df, action="BulkSync")
-                                if code == 0:
-                                    st.balloons()
-                                    st.success("Batch assignment complete!")
-                                else:
-                                    st.error("The PowerShell process encountered an error. Check the API console.")
-                else:
-                    st.error(f"❌ {st.session_state.get('teams_module_msg', 'Teams module not found.')}")
-        else:
-            st.error(f"Missing Columns! CSV must contain: {EXPECTED_COLUMNS}")
+                st.success("CSV Validated. You can now execute Teams or iPilot syncs.")
+                if st.button("🚀 Start iPilot Bulk Sync"):
+                    # iPilot Sync logic...
+                    results = []
+                    domain_count = len(st.session_state.get("raw_domains", []))
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                        future_to_user = {executor.submit(send_sync_request, row, st.session_state["current_customer_id"], selected_domain, conn_type, domain_count, st.session_state["api_token"]): row for _, row in df.iterrows()}
+                        for future in concurrent.futures.as_completed(future_to_user): results.append(future.result())
+                    st.write(pd.DataFrame(results))
+        else: st.error(f"Missing Columns: {EXPECTED_COLUMNS}")
+    else: st.info("Upload a CSV file in the sidebar to populate the grid.")
