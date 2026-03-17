@@ -6,6 +6,8 @@ import requests
 import concurrent.futures
 import json
 import subprocess
+import os
+import tempfile
 
 # Set the page configuration
 st.set_page_config(
@@ -210,37 +212,111 @@ def send_sync_request(row, account_id, domain_val, domain_type, domain_count, to
             "Code": "N/A", 
             "Response": str(e)
         }
-
-# --- Powershell 7 checker for Windows users ---
-def check_powershell_7():
-    """Checks if PowerShell 7 (pwsh) is installed and available."""
+# --- Environment Check for MicrosoftTeams Module ---
+def check_teams_module():
+    """Checks if the MicrosoftTeams PowerShell module is installed locally."""
+    check_script = "Get-Module -ListAvailable MicrosoftTeams"
     try:
-        # We use startupinfo to prevent a console window from flickering on screen
-        startupinfo = None
-        if hasattr(subprocess, 'STARTUPINFO'):
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-
+        # We use 'powershell.exe' (5.1) as the base since it's universal on Windows
         result = subprocess.run(
-            ["pwsh", "-Command", "$PSVersionTable.PSVersion.Major"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            startupinfo=startupinfo
+            ["powershell.exe", "-Command", check_script],
+            capture_output=True, text=True, timeout=10
         )
-        
-        if result.returncode == 0:
-            version = result.stdout.strip()
-            # Ensure it's 7 or higher
-            if version and int(version) >= 7:
-                return True, f"PowerShell {version} detected."
-        
-        return False, "PowerShell 7 not detected."
-    
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return False, "pwsh.exe not found. Please ensure PowerShell 7 is installed."
+        if "MicrosoftTeams" in result.stdout:
+            return True, "MicrosoftTeams module detected."
+        return False, "MicrosoftTeams module not found. Please run 'Install-Module MicrosoftTeams' as Admin."
     except Exception as e:
-        return False, f"Check failed: {str(e)}"
+        return False, f"Environment check failed: {e}"
+    
+# --- Powershell Template for Parallel Sync (for reference, not executed in Python) ---
+PS_TEMPLATE = """
+param(
+    [string]$Action,
+    [string]$JsonData
+)
+
+if ($Action -eq "Login") {
+    try {
+        Connect-MicrosoftTeams
+        Write-Host "SUCCESS: Authenticated"
+    } catch {
+        Write-Host "ERROR: $($_.Exception.Message)"
+    }
+}
+
+if ($Action -eq "BulkSync") {
+    $UserData = $JsonData | ConvertFrom-Json
+    # Note: Connect-MicrosoftTeams is called again here, 
+    # but it will use the existing token from the Login step.
+    Connect-MicrosoftTeams 
+
+    # --- YOUR RUNSPACEPOOL LOGIC HERE ---
+    Write-Host "Processing $($UserData.Count) records..."
+    # ... [Insert your RunspacePool code] ...
+}
+"""
+
+# --- Powershell Execution Logic ---
+def execute_embedded_ps(df, action="BulkSync"):
+    """
+    Extracts the embedded PS_TEMPLATE, executes the specified action,
+    and streams the output back to the Streamlit UI.
+    """
+    # 1. Prepare Data for Bulk Sync
+    json_payload = ""
+    if action == "BulkSync":
+        # We only need these two columns for the Teams assignment
+        json_payload = df[['UserPrincipalName', 'TeamsVoicePhoneNumber']].to_json(orient='records')
+    
+    # 2. Create a temporary .ps1 file
+    # We use delete=False because Windows occasionally locks files during execution
+    with tempfile.NamedTemporaryFile(suffix=".ps1", delete=False, mode='w', encoding='utf-8') as tmp:
+        tmp.write(PS_TEMPLATE)
+        tmp_path = tmp.name
+
+    try:
+        # 3. Build the command
+        # We explicitly use powershell.exe for maximum compatibility
+        cmd = [
+            "powershell.exe", 
+            "-ExecutionPolicy", "Bypass", 
+            "-File", tmp_path, 
+            "-Action", action,
+            "-JsonData", json_payload
+        ]
+
+        # 4. Execute and Stream Output
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            shell=True
+        )
+
+        st.info(f"PowerShell Action '{action}' started...")
+        log_area = st.empty()
+        full_log = ""
+
+        # Stream the output line-by-line to the dashboard
+        for line in iter(process.stdout.readline, ""):
+            full_log += line
+            log_area.code(full_log)
+        
+        process.wait()
+        return process.returncode, full_log
+
+    except Exception as e:
+        st.error(f"Execution Error: {str(e)}")
+        return 1, str(e)
+
+    finally:
+        # 5. Cleanup: Always remove the script file
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except:
+                pass # Prevent crash if file is temporarily locked
 
 # --- Sidebar Content ---
 with st.sidebar:
@@ -346,7 +422,7 @@ else:
                     data=csv_template,
                     file_name=f"Template_{selected_customer['companyName'].replace(' ', '_')}.csv",
                     mime='text/csv',
-                    use_container_width=True
+                    width="stretch"
                 )
             
             with t_col2:
@@ -360,10 +436,10 @@ else:
                         data=csv_addr,
                         file_name=f"Addresses_{selected_customer['companyName'].replace(' ', '_')}.csv",
                         mime='text/csv',
-                        use_container_width=True
+                        width="stretch"
                     )
                 else:
-                    st.button("📖 No Civic Addresses Found", disabled=True, use_container_width=True)
+                    st.button("📖 No Civic Addresses Found", disabled=True, width="stretch")
 
             # PHASE 4: Upload & Validation
             st.divider()
@@ -382,7 +458,7 @@ else:
                         errors.append(", ".join(row_errs) if row_errs else "Valid")
                     
                     df['ValidationStatus'] = errors
-                    st.dataframe(df.style.applymap(lambda v: f'color: {"red" if v != "Valid" else "green"}', subset=['ValidationStatus']), use_container_width=True)
+                    st.dataframe(df.style.map(lambda v: f'color: {"red" if v != "Valid" else "green"}', subset=['ValidationStatus']), width="stretch")
                     
                     if (df['ValidationStatus'] == 'Valid').all():
                         st.success(f"🎉 Ready to sync {len(df)} users.")
@@ -468,26 +544,41 @@ else:
                             if final_fail_count == 0:
                                 st.balloons()
                             
-                            # --- NEW: PowerShell 7 Environment Check ---
+                           # --- Teams Environment & Execution Section ---
                             st.divider()
-                            st.subheader("🖥️ Environment Verification")
+                            st.subheader("🖥️ Teams Management")
 
-                            with st.spinner("Verifying local environment for Teams operations..."):
-                                has_ps7, ps_msg = check_powershell_7()
+                            # Check for module once and cache it
+                            if "teams_module_installed" not in st.session_state:
+                                has_mod, mod_msg = check_teams_module()
+                                st.session_state["teams_module_installed"] = has_mod
+                                st.session_state["teams_module_msg"] = mod_msg
+
+                            if st.session_state["teams_module_installed"]:
+                                # STEP A: LOGIN
+                                if "teams_authenticated" not in st.session_state:
+                                    st.warning("Please authenticate with Microsoft Teams to enable bulk assignments.")
+                                    if st.button("🔑 Connect to Microsoft Teams", use_container_width=True):
+                                        code, log = execute_embedded_ps(None, action="Login")
+                                        if "SUCCESS" in log:
+                                            st.session_state["teams_authenticated"] = True
+                                            st.success("Authenticated successfully!")
+                                            st.rerun()
+                                        else:
+                                            st.error("Authentication failed. Check the logs above.")
                                 
-                                if has_ps7:
-                                    st.success(f"✅ {ps_msg}")
-                                    st.info("Environment is ready for high-performance parallel Teams assignments.")
-                                    st.session_state["use_pwsh"] = True
-                                    # Now show the "Connect to Teams" button
-                                    if st.button("🔑 Connect to Microsoft Teams"):
-                                        # Call your connection function here
-                                        pass
+                                # STEP B: BULK SYNC
                                 else:
-                                    st.warning(f"⚠️ {ps_msg}")
-                                    st.session_state["use_pwsh"] = False
-                                    st.error("PowerShell 7 is required for parallel assignments. Please install it or use the sequential fallback.")
-                                    if st.button("Download PowerShell 7"):
-                                        st.write("Redirecting to: https://github.com/PowerShell/PowerShell/releases")
+                                    st.success("✅ Authenticated & Ready")
+                                    if st.button("🚀 Execute Teams RunspacePool Assignment", type="primary", use_container_width=True):
+                                        with st.spinner("Processing assignments... do not close the browser."):
+                                            code, log = execute_embedded_ps(df, action="BulkSync")
+                                            if code == 0:
+                                                st.balloons()
+                                                st.success("Batch assignment complete!")
+                                            else:
+                                                st.error("The PowerShell process encountered an error.")
+                            else:
+                                st.error(f"❌ {st.session_state['teams_module_msg']}")
                 else:
                     st.error(f"Missing Columns! CSV must contain: {EXPECTED_COLUMNS}")
