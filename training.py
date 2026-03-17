@@ -67,7 +67,7 @@ def login_dialog():
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     
-    if st.button("Login", use_container_width=True):
+    if st.button("Login", width="stretch"):
         if username and password:
             with st.spinner("Authenticating..."):
                 api_url = "https://api.nuwave.com/v1/oauth2/authorize?instance=carousel" 
@@ -217,7 +217,7 @@ def execute_embedded_ps(df, action="BulkSync"):
 with st.sidebar:
     st.header("Upload & Tools")
     uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
-    if st.button("🔄 Clear All Caches", use_container_width=True):
+    if st.button("🔄 Clear All Caches", width="stretch"):
         for key in ["customer_cache", "raw_domains", "current_customer_id", "api_token", "api_debug_log", "address_data", "teams_authenticated", "connected_tenant"]:
             if key in st.session_state: del st.session_state[key]
         st.rerun()
@@ -244,7 +244,7 @@ with top_pane:
     with left_col:
         st.subheader("🌐 iPilot Connection")
         if "api_token" not in st.session_state:
-            if st.button("🔑 Connect to iPilot", use_container_width=True): login_dialog()
+            if st.button("🔑 Connect to iPilot", width="stretch"): login_dialog()
         else:
             if "customer_cache" not in st.session_state:
                 with st.spinner("Building Customer Cache..."):
@@ -275,12 +275,12 @@ with top_pane:
                 # Downloads
                 d_col1, d_col2 = st.columns(2)
                 template_df = pd.DataFrame(columns=EXPECTED_COLUMNS)
-                d_col1.download_button(label="📥 Blank Template", data=template_df.to_csv(index=False).encode('utf-8'), file_name="Template.csv", use_container_width=True)
+                d_col1.download_button(label="📥 Blank Template", data=template_df.to_csv(index=False).encode('utf-8'), file_name="Template.csv", width="stretch")
                 addr_list = st.session_state.get("address_data", [])
                 if addr_list:
-                    d_col2.download_button(label="📖 Address Ref", data=pd.DataFrame(addr_list).to_csv(index=False).encode('utf-8'), file_name="Addresses.csv", use_container_width=True)
+                    d_col2.download_button(label="📖 Address Ref", data=pd.DataFrame(addr_list).to_csv(index=False).encode('utf-8'), file_name="Addresses.csv", width="stretch")
                 else:
-                    d_col2.button("📖 No Addresses", disabled=True, use_container_width=True)
+                    d_col2.button("📖 No Addresses", disabled=True, width="stretch")
 
     # --- TOP RIGHT: Teams Pane ---
     with right_col:
@@ -291,7 +291,7 @@ with top_pane:
         
         if st.session_state.get("teams_module_installed"):
             if "teams_authenticated" not in st.session_state:
-                if st.button("🔑 Connect to Microsoft Teams", use_container_width=True):
+                if st.button("🔑 Connect to Microsoft Teams", width="stretch"):
                     code, log = execute_embedded_ps(None, action="Login")
                     if "SUCCESS" in log:
                         st.session_state["teams_authenticated"] = True
@@ -303,14 +303,14 @@ with top_pane:
                 tenant_name = st.session_state.get("connected_tenant", "Unknown Tenant")
                 st.success(f"✅ Connected to: **{tenant_name}**")
                 
-                if st.button("🔌 Disconnect", use_container_width=True):
+                if st.button("🔌 Disconnect", width="stretch"):
                     execute_embedded_ps(None, action="Logout")
                     for key in ["teams_authenticated", "connected_tenant"]:
                         if key in st.session_state: del st.session_state[key]
                     st.rerun()
                 
                 st.divider()
-                if st.button("🚀 Execute Teams Bulk Assignment", type="primary", use_container_width=True):
+                if st.button("🚀 Execute Teams Bulk Assignment", type="primary", width="stretch"):
                     if "current_df" in st.session_state:
                         execute_embedded_ps(st.session_state["current_df"], action="BulkSync")
                     else: st.error("Please upload and validate a CSV first.")
@@ -333,7 +333,7 @@ with bottom_pane:
             
             df['ValidationStatus'] = errors
             st.session_state["current_df"] = df
-            st.dataframe(df.style.map(lambda v: f'color: {"red" if v != "Valid" else "green"}', subset=['ValidationStatus']), use_container_width=True)
+            st.dataframe(df.style.map(lambda v: f'color: {"red" if v != "Valid" else "green"}', subset=['ValidationStatus']), width="stretch")
             
             if (df['ValidationStatus'] == 'Valid').all():
                 st.success("CSV Validated. You can now execute Teams or iPilot syncs.")
