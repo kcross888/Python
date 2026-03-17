@@ -98,6 +98,30 @@ def login_dialog():
                 except Exception as e:
                     st.error(f"Connection error: {e}")
 
+def fetch_customer_metadata(target_id):
+    token = st.session_state.get("api_token")
+    headers = {"x-access-token": token, "x-api-key": "sUxNytmtwt5u8uZrwTbtx4qo7Mxy279x88cG0tFs", "accept": "application/json"}
+    
+    # 1. Domains
+    d_url = f"https://api.nuwave.com/v1/msteams?instance=carousel&customerId={target_id}"
+    try:
+        d_res = requests.get(d_url, headers=headers, timeout=10)
+        log_api_call("GET", d_url, d_res)
+        resp_json = d_res.json()
+        st.session_state["raw_domains"] = resp_json[0].get("domains", []) if isinstance(resp_json, list) and resp_json else []
+    except:
+        st.session_state["raw_domains"] = []
+
+    # 2. Civic Addresses
+    addr_url = f"https://api.nuwave.com/v1/msteams/ocAddress/{target_id}?instance=carousel"
+    try:
+        addr_res = requests.get(addr_url, headers=headers, timeout=10)
+        log_api_call("GET", addr_url, addr_res)
+        addr_json = addr_res.json()
+        st.session_state["address_data"] = addr_json.get("addresses", []) if isinstance(addr_json, dict) else []
+    except:
+        st.session_state["address_data"] = []
+
 def get_all_customers():
     token = st.session_state.get("api_token")
     headers = {
@@ -338,59 +362,48 @@ with st.sidebar:
     else:
         st.info("No API calls made yet.")
 
-# --- Main App Logic ---
+# --- Main Application Logic ---
 st.title("NWN Collaboration Team iPilot & Teams Provisioning")
 
 if "api_token" not in st.session_state:
     st.info("Please connect to iPilot to begin.")
     if st.button("Connect to iPilot"):
         login_dialog()
-else:
-    if "customer_cache" not in st.session_state:
-        with st.spinner("Building Customer Cache..."):
-            st.session_state["customer_cache"] = get_all_customers()
+    # STOP execution here if not logged in
+    st.stop() 
+
+# --- If we reach here, the dialog is CLOSED and we are authenticated ---
+
+# 1. Handle Customer Cache
+if "customer_cache" not in st.session_state:
+    with st.spinner("Building Customer Cache..."):
+        st.session_state["customer_cache"] = get_all_customers()
+
+# 2. Handle Metadata Fetching
+customers = st.session_state.get("customer_cache", [])
+
+col1, col2 = st.columns(2)
+
+with col1:
+    selected_customer = st.selectbox(
+        "Select the iPilot Account:",
+        options=customers,
+        format_func=lambda x: f"{x['companyName']} (ID: {x['accountId']})"
+    )
+
+if selected_customer:
+    target_id = selected_customer['accountId']
     
-    customers = st.session_state.get("customer_cache", [])
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        selected_customer = st.selectbox(
-            "Select the iPilot Account:",
-            options=customers,
-            format_func=lambda x: f"{x['companyName']} (ID: {x['accountId']})"
-        )
-    
-    if selected_customer:
-        target_id = selected_customer['accountId']
-        token = st.session_state.get("api_token")
-        headers = {"x-access-token": token, "x-api-key": "sUxNytmtwt5u8uZrwTbtx4qo7Mxy279x88cG0tFs", "accept": "application/json"}
+    # Check if we need to fetch NEW metadata for a NEW customer
+    if st.session_state.get("current_customer_id") != target_id:
+        # Clear old metadata so the UI doesn't show "stale" data from previous customer
+        st.session_state["raw_domains"] = []
+        st.session_state["address_data"] = []
         
-        # DOMAIN & ADDRESS LOOKUP (Triggered when customer changes)
-        if st.session_state.get("current_customer_id") != target_id:
-            with st.spinner("Fetching Customer Metadata..."):
-                # 1. Domains
-                d_url = f"https://api.nuwave.com/v1/msteams?instance=carousel&customerId={target_id}"
-                try:
-                    d_res = requests.get(d_url, headers=headers)
-                    log_api_call("GET", d_url, d_res)
-                    resp_json = d_res.json()
-                    st.session_state["raw_domains"] = resp_json[0].get("domains", []) if isinstance(resp_json, list) and resp_json else []
-                except:
-                    st.session_state["raw_domains"] = []
-
-                # 2. Civic Addresses (PowerShell equivalent)
-                addr_url = f"https://api.nuwave.com/v1/msteams/ocAddress/{target_id}?instance=carousel"
-                try:
-                    addr_res = requests.get(addr_url, headers=headers)
-                    log_api_call("GET", addr_url, addr_res)
-                    addr_json = addr_res.json()
-                    # Extract addresses property (equivalent to select -ExpandProperty addresses)
-                    st.session_state["address_data"] = addr_json.get("addresses", []) if isinstance(addr_json, dict) else []
-                except:
-                    st.session_state["address_data"] = []
-
-                st.session_state["current_customer_id"] = target_id
+        with st.spinner(f"Fetching Metadata for {selected_customer['companyName']}..."):
+            # Put your Domain & Address Lookup Logic here
+            fetch_customer_metadata(target_id) # I suggest moving those GET calls to a helper function
+            st.session_state["current_customer_id"] = target_id
 
         domain_mapping = {}
         for d in st.session_state.get("raw_domains", []):
