@@ -85,7 +85,7 @@ def login_dialog():
                     if response.status_code == 200:
                         token = response.json().get("access_token")
                         st.session_state["api_token"] = token
-                        st.success("Successfully authenticated!")
+                        st.success("Successfully authenticated! Please wait while we fetch customer data...")
                         st.rerun() 
                     else:
                         st.error(f"Login failed: {response.status_code}")
@@ -178,14 +178,39 @@ def check_teams_module():
         return False, f"Environment check failed: {e}"
 
 PS_TEMPLATE = """
-param([string]$Action, [string]$JsonData)
+param(
+    [string]$Action,
+    [string]$JsonData
+)
+
 if ($Action -eq "Login") {
-    try { Connect-MicrosoftTeams; Write-Host "SUCCESS: Authenticated" } catch { Write-Host "ERROR: $($_.Exception.Message)" }
+    try {
+        Connect-MicrosoftTeams -ErrorAction Stop
+        # Fetch the domain from the first available user
+        $firstUser = Get-CsOnlineUser | Select-Object -ExpandProperty UserPrincipalName -First 1
+        $tenantDomain = $firstUser.Split('@')[1]
+        
+        Write-Host "SUCCESS: Authenticated"
+        Write-Host "TENANT_DOMAIN: $tenantDomain"
+    } catch {
+        Write-Host "ERROR: $($_.Exception.Message)"
+    }
 }
+
+if ($Action -eq "Logout") {
+    try {
+        Disconnect-MicrosoftTeams -ErrorAction SilentlyContinue
+        Write-Host "SUCCESS: Disconnected"
+    } catch {
+        Write-Host "ERROR: $($_.Exception.Message)"
+    }
+}
+
 if ($Action -eq "BulkSync") {
     $UserData = $JsonData | ConvertFrom-Json
     Connect-MicrosoftTeams 
     Write-Host "Processing $($UserData.Count) records..."
+    # ... [Your RunspacePool logic] ...
 }
 """
 
@@ -299,7 +324,7 @@ if selected_customer:
             df['ValidationStatus'] = errors
             
             # THE DATAFRAME VIEW
-            st.dataframe(df.style.map(lambda v: f'color: {"red" if v != "Valid" else "green"}', subset=['ValidationStatus']), use_container_width=True)
+            st.dataframe(df.style.map(lambda v: f'color: {"red" if v != "Valid" else "green"}', subset=['ValidationStatus']), width="stretch")
             
             # --- Sync Section ---
             if (df['ValidationStatus'] == 'Valid').all():
@@ -343,24 +368,71 @@ if selected_customer:
                 else:
                     st.error("Cannot sync: No compatible domain selected above.")
 
-                # --- Teams Section ---
+                # --- Teams Environment & Execution Section ---
                 st.divider()
                 st.subheader("🖥️ Teams Management")
-                if "teams_module_installed" not in st.session_state:
-                    has_mod, _ = check_teams_module()
-                    st.session_state["teams_module_installed"] = has_mod
 
-                if st.session_state["teams_module_installed"]:
+                # Check for module once and cache it
+                if "teams_module_installed" not in st.session_state:
+                    has_mod, mod_msg = check_teams_module()
+                    st.session_state["teams_module_installed"] = has_mod
+                    st.session_state["teams_module_msg"] = mod_msg
+
+                if st.session_state.get("teams_module_installed"):
+                    # STEP A: LOGIN
                     if "teams_authenticated" not in st.session_state:
-                        if st.button("🔑 Connect to Microsoft Teams", use_container_width=True):
+                        st.warning("Please authenticate with Microsoft Teams to enable bulk assignments.")
+                        if st.button("🔑 Connect to Microsoft Teams", width="stretch"):
                             code, log = execute_embedded_ps(None, action="Login")
+                            
                             if "SUCCESS" in log:
                                 st.session_state["teams_authenticated"] = True
+                                
+                                # Parse the domain from PS output using Regex
+                                import re
+                                match = re.search(r"TENANT_DOMAIN:\s+(\S+)", log)
+                                if match:
+                                    st.session_state["connected_tenant"] = match.group(1)
+                                else:
+                                    st.session_state["connected_tenant"] = "Authenticated (Domain Unknown)"
+                                
+                                st.success("Authenticated successfully!")
                                 st.rerun()
+                            else:
+                                st.error("Authentication failed. Check the logs.")
+
+                    # STEP B: SHOW STATUS, DISCONNECT, & EXECUTE
                     else:
-                        if st.button("🚀 Execute Teams RunspacePool Assignment", type="primary", use_container_width=True):
-                            execute_embedded_ps(df, action="BulkSync")
+                        # Layout for Status and Disconnect
+                        status_col, action_col = st.columns([3, 1])
+                        
+                        tenant_name = st.session_state.get("connected_tenant", "Unknown Tenant")
+                        status_col.success(f"✅ Connected to: **{tenant_name}**")
+                        
+                        # --- Disconnect Button ---
+                        if action_col.button("🔌 Disconnect", width="stretch"):
+                            with st.spinner("Disconnecting from Teams..."):
+                                # Actually run the PS Disconnect command
+                                execute_embedded_ps(None, action="Logout")
+                                
+                                # Clear Teams-specific session state
+                                keys_to_clear = ["teams_authenticated", "connected_tenant"]
+                                for key in keys_to_clear:
+                                    if key in st.session_state:
+                                        del st.session_state[key]
+                                st.rerun()
+
+                        # --- Bulk Assignment Button ---
+                        if st.button("🚀 Execute Teams Phone Number Assignment", type="primary", width="stretch"):
+                            with st.spinner(f"Processing phone number assignments for {tenant_name}..."):
+                                # Pass the existing dataframe (df) to the sync function
+                                code, log = execute_embedded_ps(df, action="BulkSync")
+                                if code == 0:
+                                    st.balloons()
+                                    st.success("Batch assignment complete!")
+                                else:
+                                    st.error("The PowerShell process encountered an error. Check the API console.")
                 else:
-                    st.error("MicrosoftTeams module not detected on this host.")
+                    st.error(f"❌ {st.session_state.get('teams_module_msg', 'Teams module not found.')}")
         else:
             st.error(f"Missing Columns! CSV must contain: {EXPECTED_COLUMNS}")
