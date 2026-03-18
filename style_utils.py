@@ -6,7 +6,7 @@ def add_sidebar_logo(logo_path="assets/NWN-Logo_No-Tagline_Horizonal_RGB_Orange-
     adjusts padding so it doesn't look cramped.
     """
     # 1. Display the image in the sidebar
-    st.sidebar.image(logo_path, use_container_width=True)
+    st.sidebar.image(logo_path, width='stretch')
     
     # 2. Add some CSS to pull the logo to the very top and 
     # fix the spacing between the logo and the navigation links.
