@@ -1,6 +1,10 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
+from style_utils import inject_custom_nwn_css, add_sidebar_logo
+
+inject_custom_nwn_css()
+add_sidebar_logo("assets/nwn_logo.png")
 
 # https://673szt68ypq4sugnzq8vbr.streamlit.app/
 

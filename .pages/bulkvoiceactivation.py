@@ -8,13 +8,12 @@ import json
 import subprocess
 import os
 import tempfile
+from style_utils import inject_custom_nwn_css, add_sidebar_logo
 
-# Set the page configuration
-st.set_page_config(
-    page_title="iPilot Sync Tool",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+inject_custom_nwn_css()
+add_sidebar_logo("assets/nwn_logo.png")
+
+st.title("Bulk iPilot and Teams Voice Provisioning")
 
 # --- Helper: Debug Console Manager ---
 def log_api_call(method, url, response):
