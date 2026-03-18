@@ -207,7 +207,7 @@ with st.sidebar:
     st.title("Engineer Dashboard")
     st.header("📍 Session Context")
     
-    # Context Labels with Fallbacks
+    # Context Labels
     ipilot_cust = st.session_state.get("selected_customer_name", "None Selected")
     ipilot_dom = st.session_state.get("active_conn_type", "None Selected")
     teams_tenant = st.session_state.get("connected_tenant", "Disconnected")
@@ -258,15 +258,30 @@ with top_pane:
             
             if selected_customer:
                 target_id = selected_customer['accountId']
-                st.session_state["selected_customer_name"] = selected_customer['companyName']
                 
-                # Fetch metadata if customer changed
+                # Metadata Fetch & Context Update
                 if st.session_state.get("current_customer_id") != target_id:
                     with st.spinner("Fetching Metadata..."):
                         fetch_customer_metadata(target_id)
                         st.session_state["current_customer_id"] = target_id
+                        st.session_state["selected_customer_name"] = selected_customer['companyName']
+                        
+                        # Build domain map immediately to check for auto-selection
+                        domain_mapping = {}
+                        for d in st.session_state.get("raw_domains", []):
+                            if is_valid_uuid(d): domain_mapping["Operator Connect"] = d
+                            else: domain_mapping["DRaaS"] = d
+                        
+                        # Auto-select if only 1 domain exists
+                        if len(domain_mapping) == 1:
+                            conn_type = list(domain_mapping.keys())[0]
+                            st.session_state["active_conn_type"] = conn_type
+                            st.session_state["active_domain_val"] = domain_mapping[conn_type]
+                        
+                        # CRITICAL: Rerun to update Sidebar Context and Debug Console immediately
+                        st.rerun()
                 
-                # Build domain map
+                # Domain selection UI
                 domain_mapping = {}
                 for d in st.session_state.get("raw_domains", []):
                     if is_valid_uuid(d): domain_mapping["Operator Connect"] = d
@@ -274,22 +289,16 @@ with top_pane:
                 
                 if domain_mapping:
                     options = list(domain_mapping.keys())
-                    
-                    # FIX: Auto-populate context if only 1 domain exists
-                    if len(options) == 1:
-                        st.session_state["active_conn_type"] = options[0]
-                        st.session_state["active_domain_val"] = domain_mapping[options[0]]
-                        st.info(f"Auto-Selected Domain: **{options[0]}**")
-                    else:
-                        # If more than 1, let user pick, but update state on change
+                    if len(options) > 1:
                         choice = st.selectbox("Connection Type:", options=options)
-                        st.session_state["active_conn_type"] = choice
-                        st.session_state["active_domain_val"] = domain_mapping[choice]
-
+                        if st.session_state.get("active_conn_type") != choice:
+                            st.session_state["active_conn_type"] = choice
+                            st.session_state["active_domain_val"] = domain_mapping[choice]
+                            st.rerun()
+                    else:
+                        st.info(f"Using Domain: **{st.session_state.get('active_conn_type')}**")
                 else:
                     st.warning("No compatible domains found.")
-                    st.session_state["active_conn_type"] = "None"
-                    st.session_state["active_domain_val"] = None
 
                 # Downloads
                 d_col1, d_col2 = st.columns(2)
@@ -325,7 +334,6 @@ with top_pane:
                     for key in ["teams_authenticated", "connected_tenant"]:
                         if key in st.session_state: del st.session_state[key]
                     st.rerun()
-                st.info("Teams active. Assignment buttons available below grid.")
         else: st.error("Teams Module not found.")
 
 # --- BOTTOM PANE: Data Validation Grid ---
@@ -351,7 +359,6 @@ with bottom_pane:
                 
                 with exec_col1:
                     st.write("### iPilot Action")
-                    # Pulling from the synchronized session state
                     active_domain = st.session_state.get("active_domain_val")
                     active_type = st.session_state.get("active_conn_type")
                     
