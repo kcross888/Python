@@ -6,7 +6,7 @@ st.set_page_config(page_title="NWN Portal", layout="wide")
 
 # Inject the shared styles
 inject_custom_nwn_css()
-add_sidebar_logo("assets/nwn_logo.png")
+add_sidebar_logo("assets/NWN-Logo_No-Tagline_Horizonal_RGB_Orange-and-Navy.png")
 
 st.title("🛠️ NWN Collaboration Engineer Portal")
 st.write("Centralized access for Teams Voice and iPilot automation tools.")
