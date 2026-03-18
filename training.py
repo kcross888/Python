@@ -29,19 +29,26 @@ def log_api_call(method, url, response):
 def parse_ipilot_response(resp_text):
     """Parses raw response text to find actual status codes or error messages."""
     try:
-        # Fix: Changed resp_json to resp_text
         if not resp_text:
             return 500, "Empty response from API"
             
         data = json.loads(resp_text) if isinstance(resp_text, str) else resp_text
         
-        # Extract status; fallback to 200 if not explicitly in the body
-        status_code = data.get("status", 200)
+        raw_status = data.get("status", 200)
         message = data.get("message") or data.get("reason") or "No detailed message"
         
-        return int(status_code), message
+        # SAFE CAST: Try to convert status to int. 
+        # If it's a string like "1 Number(s) details is invalid", catch the error.
+        try:
+            status_code = int(raw_status)
+        except (ValueError, TypeError):
+            # If it's not a number, it's a failure. 
+            # Default to 400 and prepend the string to the message.
+            status_code = 400 
+            message = f"{raw_status} | {message}"
+        
+        return status_code, message
     except Exception as e:
-        # Returning the actual error helps with debugging in the log
         return 500, f"Error parsing response body: {str(e)}"
 
 # --- Configuration & Helpers ---
