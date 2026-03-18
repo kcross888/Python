@@ -424,20 +424,34 @@ with bottom_pane:
                             final_success_count = 0
                             final_fail_count = 0
 
+                            # --- Color coding for HTML Log ---
+                            log_html = """
+                            <div style="background-color: #0e1117; color: #d1d1d1; padding: 10px; border-radius: 5px; 
+                                        font-family: 'Courier New', Courier, monospace; font-size: 14px; 
+                                        height: 300px; overflow-y: scroll; border: 1px solid #31333f;">
+                                <strong style="color: #fafafa;">IPILOT BULK SYNC LOG</strong><br>
+                                <hr style="border: 0.5px solid #31333f;">
+                            """
+
                             for _, r in results_df.iterrows():
                                 actual_code, clean_msg = parse_ipilot_response(r['Response'])
                                 if actual_code in [200, 201, 202]:
                                     display_status = "Success"
+                                    color = "#28a745" # Green
                                     final_success_count += 1
                                 else:
                                     display_status = "Failed"
+                                    color = "#ff4b4b" # Red
                                     final_fail_count += 1
-                                log_content += f"[{display_status}] {r['User']} | Code: {actual_code} | Reason: {clean_msg}\n"
+                                log_html += f'<span style="color: {color};">[{display_status}]</span> {r["User"]} | ' \
+                                            f'Code: {actual_code} | Reason: {clean_msg}<br>'
+                            log_html += "</div>"
 
                             status_msg.success("✅ Sync Operation Complete")
                             st.divider()
                             st.subheader("📋 Provisioning Results")
-                            st.text_area("Detailed Output Log", value=log_content, height=300)
+                            # Display the custom scrollable HTML log
+                            st.markdown(log_html, unsafe_allow_html=True)
                             
                             st.download_button(
                                 label="💾 Download Sync Log",
