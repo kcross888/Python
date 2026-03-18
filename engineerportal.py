@@ -6,7 +6,7 @@ st.set_page_config(page_title="NWN Portal", layout="wide")
 
 # Inject the shared styles
 inject_custom_nwn_css()
-add_sidebar_logo("assets/NWN-Logo_No-Tagline_Horizonal_RGB_Orange-and-Navy.png")
+add_sidebar_logo()
 
 st.title("🛠️ NWN Collaboration Engineer Portal")
 st.write("Centralized access for Teams Voice and iPilot automation tools.")
@@ -14,9 +14,10 @@ st.write("Centralized access for Teams Voice and iPilot automation tools.")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.info("### iPilot Sync")
+    st.info("### Bulk Provisioning")
     st.write("Bulk provisioning for Operator Connect and DRaaS.")
-    st.link_button("Open Tool", "http://localhost:8502")
+    if st.button("Launch Bulk Provisioning", key="btn_bulkprovisioning"):
+        st.switch_page("pages/bulkvoiceactivation.py")
 
 with col2:
     st.success("### Tenant Auditor")

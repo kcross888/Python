@@ -11,7 +11,7 @@ import tempfile
 from style_utils import inject_custom_nwn_css, add_sidebar_logo
 
 inject_custom_nwn_css()
-add_sidebar_logo("assets/NWN-Logo_No-Tagline_Horizonal_RGB_Orange-and-Navy.png")
+add_sidebar_logo()
 
 st.title("Bulk iPilot and Teams Voice Provisioning")
 
