@@ -18,6 +18,7 @@ st.set_page_config(
 
 # --- Helper: Debug Console Manager ---
 def log_api_call(method, url, response):
+    """Stores the last API response in session state for the sidebar console."""
     log_entry = {
         "Method": method,
         "URL": url,
@@ -47,6 +48,7 @@ def is_valid_phone(phone):
 def is_valid_account(acc_type):
     return str(acc_type).strip().lower() in ['user', 'resource']
 
+# --- JSON Parser with Error Handling ---
 def parse_ipilot_response(response_text):
     try:
         data = json.loads(response_text)
@@ -94,6 +96,7 @@ def fetch_customer_metadata(target_id):
     token = st.session_state.get("api_token")
     headers = {"x-access-token": token, "x-api-key": "sUxNytmtwt5u8uZrwTbtx4qo7Mxy279x88cG0tFs", "accept": "application/json"}
     
+    # Domains
     d_url = f"https://api.nuwave.com/v1/msteams?instance=carousel&customerId={target_id}"
     try:
         d_res = requests.get(d_url, headers=headers, timeout=10)
@@ -103,6 +106,7 @@ def fetch_customer_metadata(target_id):
     except:
         st.session_state["raw_domains"] = []
 
+    # Civic Addresses
     addr_url = f"https://api.nuwave.com/v1/msteams/ocAddress/{target_id}?instance=carousel"
     try:
         addr_res = requests.get(addr_url, headers=headers, timeout=10)
@@ -215,10 +219,28 @@ def execute_embedded_ps(df, action="BulkSync"):
 
 # --- Sidebar Content ---
 with st.sidebar:
+    st.title("Engineer Dashboard")
+    
+    # Persistent Session Context Info
+    st.header("📍 Session Context")
+    ipilot_status = st.session_state.get("selected_customer_name", "Not Selected")
+    domain_status = st.session_state.get("selected_domain_name", "Not Selected")
+    teams_status = st.session_state.get("connected_tenant", "Disconnected")
+    
+    st.markdown(f"""
+    **iPilot Customer:** `{ipilot_status}`  
+    
+    **iPilot Domain:** `{domain_status}`  
+    
+    **Teams Tenant:** `{teams_status}`
+    """)
+    st.divider()
+
     st.header("Upload & Tools")
     uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
     if st.button("🔄 Clear All Caches", width="stretch"):
-        for key in ["customer_cache", "raw_domains", "current_customer_id", "api_token", "api_debug_log", "address_data", "teams_authenticated", "connected_tenant"]:
+        for key in ["customer_cache", "raw_domains", "current_customer_id", "api_token", "api_debug_log", 
+                    "address_data", "teams_authenticated", "connected_tenant", "selected_customer_name", "selected_domain_name"]:
             if key in st.session_state: del st.session_state[key]
         st.rerun()
     st.divider()
@@ -255,6 +277,8 @@ with top_pane:
             
             if selected_customer:
                 target_id = selected_customer['accountId']
+                st.session_state["selected_customer_name"] = selected_customer['companyName']
+                
                 if st.session_state.get("current_customer_id") != target_id:
                     with st.spinner("Fetching Metadata..."):
                         fetch_customer_metadata(target_id)
@@ -268,9 +292,11 @@ with top_pane:
                 if domain_mapping:
                     conn_type = st.selectbox("Connection Type:", options=list(domain_mapping.keys()))
                     selected_domain = domain_mapping[conn_type]
+                    st.session_state["selected_domain_name"] = f"{conn_type} ({selected_domain})"
                 else:
                     st.warning("No compatible domains found.")
                     selected_domain = None
+                    st.session_state["selected_domain_name"] = "None Found"
 
                 # Downloads
                 d_col1, d_col2 = st.columns(2)
@@ -309,11 +335,7 @@ with top_pane:
                         if key in st.session_state: del st.session_state[key]
                     st.rerun()
                 
-                st.divider()
-                if st.button("🚀 Execute Teams Bulk Assignment", type="primary", width="stretch"):
-                    if "current_df" in st.session_state:
-                        execute_embedded_ps(st.session_state["current_df"], action="BulkSync")
-                    else: st.error("Please upload and validate a CSV first.")
+                st.info("Teams session is active. Buttons will appear below the grid upon validation.")
         else: st.error("Teams Module not found.")
 
 # --- BOTTOM PANE: Data Validation Grid ---
@@ -335,15 +357,34 @@ with bottom_pane:
             st.session_state["current_df"] = df
             st.dataframe(df.style.map(lambda v: f'color: {"red" if v != "Valid" else "green"}', subset=['ValidationStatus']), width="stretch")
             
+            # --- EXECUTION BUTTONS SECTION ---
             if (df['ValidationStatus'] == 'Valid').all():
-                st.success("CSV Validated. You can now execute Teams or iPilot syncs.")
-                if st.button("🚀 Start iPilot Bulk Sync"):
-                    # iPilot Sync logic...
-                    results = []
-                    domain_count = len(st.session_state.get("raw_domains", []))
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                        future_to_user = {executor.submit(send_sync_request, row, st.session_state["current_customer_id"], selected_domain, conn_type, domain_count, st.session_state["api_token"]): row for _, row in df.iterrows()}
-                        for future in concurrent.futures.as_completed(future_to_user): results.append(future.result())
-                    st.write(pd.DataFrame(results))
+                st.success("✅ CSV Validated. Select an execution path below.")
+                
+                exec_col1, exec_col2 = st.columns(2)
+                
+                # Path 1: iPilot Sync
+                with exec_col1:
+                    st.write("### iPilot Action")
+                    if "api_token" in st.session_state and st.session_state.get("selected_domain_name") != "None Found":
+                        if st.button("🚀 Start iPilot Bulk Sync", width="stretch"):
+                            results = []
+                            domain_count = len(st.session_state.get("raw_domains", []))
+                            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                                # Note: selected_domain and conn_type are pulled from the current execution context
+                                future_to_user = {executor.submit(send_sync_request, row, st.session_state["current_customer_id"], selected_domain, conn_type, domain_count, st.session_state["api_token"]): row for _, row in df.iterrows()}
+                                for future in concurrent.futures.as_completed(future_to_user): results.append(future.result())
+                            st.write(pd.DataFrame(results))
+                    else:
+                        st.warning("Ensure iPilot is connected and a domain is selected above.")
+
+                # Path 2: Teams Sync
+                with exec_col2:
+                    st.write("### Microsoft Teams Action")
+                    if st.session_state.get("teams_authenticated"):
+                        if st.button("🚀 Execute Teams Bulk Assignment", type="primary", width="stretch"):
+                            execute_embedded_ps(st.session_state["current_df"], action="BulkSync")
+                    else:
+                        st.warning("Ensure Microsoft Teams is connected above.")
         else: st.error(f"Missing Columns: {EXPECTED_COLUMNS}")
     else: st.info("Upload a CSV file in the sidebar to populate the grid.")
