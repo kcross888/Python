@@ -1,5 +1,12 @@
-[ui]
-displaySidebarNavigation = true
+[browser]
+# This is the specific key for Wide Mode
+gatherUsageStats = false
+displayEnabled = true
 
-[layout]
-wideMode = true
+[global]
+# Modern Streamlit versions look here for the layout
+layout = "wide"
+
+[server]
+# This helps with refresh persistence
+runOnSave = true
