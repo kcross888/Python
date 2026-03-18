@@ -27,29 +27,37 @@ def log_api_call(method, url, response):
     st.session_state["api_debug_log"] = log_entry
 
 def parse_ipilot_response(resp_text):
-    """Parses raw response text to find actual status codes or error messages."""
+    """Parses raw response text using validated nested logic for iPilot responses."""
     try:
         if not resp_text:
             return 500, "Empty response from API"
-            
+
+        # Ensure we are working with a dictionary
         data = json.loads(resp_text) if isinstance(resp_text, str) else resp_text
         
-        raw_status = data.get("status", 200)
-        message = data.get("message") or data.get("reason") or "No detailed message"
+        # 1. Get the nested status (statusCode), defaulting to 200
+        inner_status = data.get("statusCode", 200) 
         
-        # SAFE CAST: Try to convert status to int. 
-        # If it's a string like "1 Number(s) details is invalid", catch the error.
+        # 2. Extract the message from errors or status key
+        msg = data.get("errors", {}).get("message") or data.get("status", "Operation Successful")
+        
+        # 3. Handle the 'invalid_numbers' map if present
+        invalid_map = data.get("data", {}).get("invalid_numbers", {})
+        if invalid_map:
+            details = " | ".join([f"{num}: {reason}" for num, reason in invalid_map.items()])
+            msg = f"{msg} ({details})"
+            
+        # 4. Return the status as an int and the formatted message
+        # Added a safe-guard just in case 'inner_status' isn't a clean number
         try:
-            status_code = int(raw_status)
+            return int(inner_status), msg
         except (ValueError, TypeError):
-            # If it's not a number, it's a failure. 
-            # Default to 400 and prepend the string to the message.
-            status_code = 400 
-            message = f"{raw_status} | {message}"
-        
-        return status_code, message
+            return 400, f"{inner_status} | {msg}"
+            
+    except json.JSONDecodeError:
+        return 200, "Response received, but body was not in JSON format."
     except Exception as e:
-        return 500, f"Error parsing response body: {str(e)}"
+        return 500, f"Parsing Error: {str(e)}"
 
 # --- Configuration & Helpers ---
 EXPECTED_COLUMNS = ['SiteName', 'civicAddressId', 'UserPrincipalName', 'TeamsVoicePhoneNumber', 'TypeofAccount']
