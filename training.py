@@ -26,6 +26,17 @@ def log_api_call(method, url, response):
     }
     st.session_state["api_debug_log"] = log_entry
 
+def parse_ipilot_response(resp_text):
+    """Parses raw response text to find actual status codes or error messages."""
+    try:
+        data = json.loads(resp_json) if isinstance(resp_text, str) else resp_text
+        # Common iPilot response patterns
+        status_code = data.get("status", 200)
+        message = data.get("message") or data.get("reason") or "No detailed message"
+        return int(status_code), message
+    except:
+        return 500, "Error parsing response body"
+
 # --- Configuration & Helpers ---
 EXPECTED_COLUMNS = ['SiteName', 'civicAddressId', 'UserPrincipalName', 'TeamsVoicePhoneNumber', 'TypeofAccount']
 
@@ -266,22 +277,18 @@ with top_pane:
                         st.session_state["current_customer_id"] = target_id
                         st.session_state["selected_customer_name"] = selected_customer['companyName']
                         
-                        # Build domain map immediately to check for auto-selection
                         domain_mapping = {}
                         for d in st.session_state.get("raw_domains", []):
                             if is_valid_uuid(d): domain_mapping["Operator Connect"] = d
                             else: domain_mapping["DRaaS"] = d
                         
-                        # Auto-select if only 1 domain exists
                         if len(domain_mapping) == 1:
                             conn_type = list(domain_mapping.keys())[0]
                             st.session_state["active_conn_type"] = conn_type
                             st.session_state["active_domain_val"] = domain_mapping[conn_type]
                         
-                        # CRITICAL: Rerun to update Sidebar Context and Debug Console immediately
                         st.rerun()
                 
-                # Domain selection UI
                 domain_mapping = {}
                 for d in st.session_state.get("raw_domains", []):
                     if is_valid_uuid(d): domain_mapping["Operator Connect"] = d
@@ -354,7 +361,7 @@ with bottom_pane:
             st.dataframe(df.style.map(lambda v: f'color: {"red" if v != "Valid" else "green"}', subset=['ValidationStatus']), width="stretch")
             
             if (df['ValidationStatus'] == 'Valid').all():
-                st.success("✅ CSV Validated.")
+                st.success(f"🎉 Ready to sync {len(df)} users.")
                 exec_col1, exec_col2 = st.columns(2)
                 
                 with exec_col1:
@@ -365,11 +372,65 @@ with bottom_pane:
                     if "api_token" in st.session_state and active_domain:
                         if st.button("🚀 Start iPilot Bulk Sync", width="stretch"):
                             results = []
-                            dom_count = len(st.session_state.get("raw_domains", []))
+                            domain_count = len(st.session_state.get("raw_domains", []))
+                            
+                            status_msg = st.empty()
+                            progress_bar = st.progress(0)
+                            status_msg.info(f"🚀 Initializing parallel sync for {len(df)} users...")
+                            
                             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                                future_to_user = {executor.submit(send_sync_request, row, st.session_state["current_customer_id"], active_domain, active_type, dom_count, st.session_state["api_token"]): row for _, row in df.iterrows()}
-                                for future in concurrent.futures.as_completed(future_to_user): results.append(future.result())
-                            st.write(pd.DataFrame(results))
+                                future_to_user = {
+                                    executor.submit(
+                                        send_sync_request, 
+                                        row, 
+                                        st.session_state["current_customer_id"], 
+                                        active_domain, 
+                                        active_type, 
+                                        domain_count, 
+                                        st.session_state["api_token"]
+                                    ): row for _, row in df.iterrows()
+                                }
+
+                                for i, future in enumerate(concurrent.futures.as_completed(future_to_user)):
+                                    results.append(future.result())
+                                    progress_bar.progress((i + 1) / len(df))
+                                    status_msg.info(f"Processing... Completed {i+1} of {len(df)}")
+
+                            # Create Log & Review UI
+                            results_df = pd.DataFrame(results)
+                            log_content = "IPILOT BULK SYNC LOG\n" + "="*30 + "\n"
+                            final_success_count = 0
+                            final_fail_count = 0
+
+                            for _, r in results_df.iterrows():
+                                actual_code, clean_msg = parse_ipilot_response(r['Response'])
+                                if actual_code in [200, 201, 202]:
+                                    display_status = "Success"
+                                    final_success_count += 1
+                                else:
+                                    display_status = "Failed"
+                                    final_fail_count += 1
+                                log_content += f"[{display_status}] {r['User']} | Code: {actual_code} | Reason: {clean_msg}\n"
+
+                            status_msg.success("✅ Sync Operation Complete")
+                            st.divider()
+                            st.subheader("📋 Provisioning Results")
+                            st.text_area("Detailed Output Log", value=log_content, height=300)
+                            
+                            st.download_button(
+                                label="💾 Download Sync Log",
+                                data=log_content,
+                                file_name=f"SyncLog_{st.session_state.get('selected_customer_name')}.txt",
+                                mime='text/plain',
+                                width="stretch"
+                            )
+                            
+                            c1, c2 = st.columns(2)
+                            c1.metric("Success", final_success_count)
+                            c2.metric("Failed/Error", final_fail_count, delta_color="inverse")
+
+                            if final_fail_count == 0:
+                                st.balloons()
                     else: st.warning("Connect iPilot and select a domain first.")
 
                 with exec_col2:
