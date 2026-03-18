@@ -427,7 +427,7 @@ with bottom_pane:
                             # --- Color coding for HTML Log ---
                             log_html = """
                             <div style="background-color: #0e1117; color: #d1d1d1; padding: 10px; border-radius: 5px; 
-                                        font-family: 'Courier New', Courier, monospace; font-size: 10px; line-height: 1.2; 
+                                        font-family: 'Courier New', Courier, monospace; font-size: 12px; line-height: 1.2; 
                                         height: 300px; overflow-y: scroll; border: 1px solid #31333f;">
                                 <strong style="color: #fafafa;">IPILOT BULK SYNC LOG</strong><br>
                                 <hr style="border: 0.5px solid #31333f;">
