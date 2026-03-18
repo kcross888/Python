@@ -380,10 +380,16 @@ if ($Action -eq "BulkSync") {
 """
 
 def execute_embedded_ps(df, action="BulkSync"):
-    json_payload = df[['UserPrincipalName', 'TeamsVoicePhoneNumber']].to_json(orient='records') if (action == "BulkSync" and df is not None) else ""
+    json_payload = df[['UserPrincipalName', 'TeamsVoicePhoneNumber']].to_json(orient='records') if (action in ["BulkSync", "Validation"] and df is not None) else ""
     with tempfile.NamedTemporaryFile(suffix=".ps1", delete=False, mode='w', encoding='utf-8') as tmp:
         tmp.write(PS_TEMPLATE)
         tmp_path = tmp.name
+    # Create a copy of the system environment
+    my_env = os.environ.copy()
+    # This is the industry standard for 'Disable Colors'
+    my_env["TERM"] = "dumb" 
+    my_env["NO_COLOR"] = "1"
+
     try:
         cmd = ["pwsh.exe", "-ExecutionPolicy", "Bypass", "-File", tmp_path, "-Action", action, "-JsonData", json_payload]
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=True)
@@ -641,12 +647,28 @@ with bottom_pane:
                         if st.button("✅ Validate UPNs and Phone Numbers in Teams ", width="stretch"):
                             with st.spinner("Multithreading in progress..."):
                                 # Execute your PS7 script
-                                raw_output = execute_embedded_ps(st.session_state["current_df"], action="Validation")
+                                result_data = execute_embedded_ps(st.session_state["current_df"], action="Validation")
                                 
+                                # Check if result_data is a tuple and grab the first index (stdout)
+                                if isinstance(result_data, tuple):
+                                    # index 0 is returncode, index 1 is the full_log string
+                                    rc, raw_output = result_data 
+                                    if rc != 0:
+                                        st.error(f"PowerShell exited with error code {rc}")
+                                else:
+                                    raw_output = result_data
+
                                 if raw_output:
                                     try:
+                                        # --- STEP 1: STRIP ANSI COLOR CODES ---
+                                        # This regex looks for the ESC character followed by the color sequences
+                                        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+                                        clean_text = ansi_escape.sub('', raw_output)
+                                        # --- STEP 2: GRAB THE LAST LINE (THE JSON) ---
+                                        lines = [line.strip() for line in clean_text.split('\n') if line.strip()]
+                                        clean_json = lines[-1]
                                         # Parse the JSON
-                                        results = json.loads(raw_output)
+                                        results = json.loads(clean_json)
                                         summary = results['Summary']
                                         details_df = pd.DataFrame(results['Details'])
 
@@ -668,7 +690,7 @@ with bottom_pane:
 
                                         st.dataframe(
                                             details_df.style.applymap(color_status, subset=['Status']),
-                                            use_container_width=True,
+                                            width="stretch",
                                             hide_index=True
                                         )
 
@@ -680,7 +702,7 @@ with bottom_pane:
 
                                     except Exception as e:
                                         st.error(f"Error parsing results: {e}")
-                                        st.code(raw_output) # Show raw output if parsing fails
+                                        st.code(clean_text, language="text") # Show raw output if parsing fails
                         if st.button("🚀 Execute Teams Bulk Assignment", type="primary", width="stretch"):
                             execute_embedded_ps(st.session_state["current_df"], action="BulkSync")
                     else: st.warning("Connect to Microsoft Teams first.")
