@@ -9,7 +9,7 @@ import subprocess
 import os
 import tempfile
 import asyncio
-from azure.identity import DefaultAzureCredential
+from azure.identity import ClientSecretCredential
 from msgraph import GraphServiceClient
 from style_utils import inject_custom_nwn_css, add_sidebar_logo
 
@@ -188,19 +188,41 @@ def send_sync_request(row, account_id, domain_val, domain_type, domain_count, to
         return {"User": row['UserPrincipalName'], "Status": "Error", "Code": "N/A", "Response": str(e)}
 
 async def connect_to_graph():
-    # This automatically pulls from environment variables 
-    # (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_CLIENT_SECRET)
-    # which is the most secure way to handle NWN credentials locally.
-    credential = DefaultAzureCredential()
+    # Explicitly define the NWN Lab App Registration details
+    # In a real app, pull these from st.secrets or os.environ
+    tenant_id = "your-tenant-id"
+    client_id = "your-client-id"
+    client_secret = "your-client-secret"
+
+    credential = ClientSecretCredential(
+        tenant_id=tenant_id,
+        client_id=client_id,
+        client_secret=client_secret
+    )
     
-    # Initialize the Graph Client
-    graph_client = GraphServiceClient(credential)
-    return graph_client
+    return GraphServiceClient(credential)
 
 # Example: Get a user to verify connection
 async def get_teams_user(client, user_upn):
     user = await client.users.by_user_id(user_upn).get()
     return user
+
+async def verify_environment(client: GraphServiceClient):
+    try:
+        # Query the 'organization' endpoint for tenant details
+        # This is the equivalent of 'Get-MgOrganization' in PowerShell
+        org_info = await client.organization.get()
+        
+        # Access the first (and only) organization object
+        if org_info and org_info.value:
+            tenant = org_info.value[0]
+            return {
+                "TenantName": tenant.display_name,
+                "TenantId": tenant.id,
+                "Verified": True
+            }
+    except Exception as e:
+        return {"Verified": False, "Error": str(e)}
 
 def check_teams_module():
     check_script = "Get-Module -ListAvailable MicrosoftTeams"
@@ -547,7 +569,29 @@ with top_pane:
 
         if st.session_state["selected_teams_method"] == "Graph API":
             st.info("Using Microsoft Graph (Service Principal)")
-            # Add your Client ID / Secret inputs here
+            if st.button("Connect to Graph"):
+                try:
+                    # Note: Streamlit runs in a synchronous loop, 
+                    # so we use asyncio.run to bridge the gap
+                    client = asyncio.run(connect_to_graph())
+
+                    # IMMEDIATELY CHECK THE ENVIRONMENT
+                    env_details = asyncio.run(verify_environment(client))
+
+                    if env_details["Verified"]:
+                        st.session_state["graph_client"] = client
+                        st.session_state["active_tenant"] = env_details["TenantName"]
+                        st.success(f"Connected to: **{env_details['TenantName']}**")
+                    else:
+                        st.error(f"Failed to verify environment: {env_details['Error']}")
+
+                except Exception as e:
+                    st.error(f"Graph Auth Failed: {e}")
+            
+            # DISPLAY PERSISTENT WARNING IF CONNECTED
+            if "active_tenant" in st.session_state:
+                st.sidebar.warning(f"📍 ACTIVE TARGET: {st.session_state['active_tenant']}")
+
         else:
             st.info("Using Teams PowerShell (Modern Auth)")
             if "teams_module_installed" not in st.session_state:
