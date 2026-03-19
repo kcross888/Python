@@ -8,10 +8,17 @@ import json
 import subprocess
 import os
 import tempfile
+import asyncio
+from azure.identity import DefaultAzureCredential
+from msgraph import GraphServiceClient
 from style_utils import inject_custom_nwn_css, add_sidebar_logo
 
-inject_custom_nwn_css()
+
+st.set_page_config(page_title="NWN Portal", layout="wide")
+
 add_sidebar_logo()
+inject_custom_nwn_css()
+
 
 st.title("Bulk iPilot and Teams Voice Provisioning")
 
@@ -180,10 +187,25 @@ def send_sync_request(row, account_id, domain_val, domain_type, domain_count, to
     except Exception as e:
         return {"User": row['UserPrincipalName'], "Status": "Error", "Code": "N/A", "Response": str(e)}
 
+async def connect_to_graph():
+    # This automatically pulls from environment variables 
+    # (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_CLIENT_SECRET)
+    # which is the most secure way to handle NWN credentials locally.
+    credential = DefaultAzureCredential()
+    
+    # Initialize the Graph Client
+    graph_client = GraphServiceClient(credential)
+    return graph_client
+
+# Example: Get a user to verify connection
+async def get_teams_user(client, user_upn):
+    user = await client.users.by_user_id(user_upn).get()
+    return user
+
 def check_teams_module():
     check_script = "Get-Module -ListAvailable MicrosoftTeams"
     try:
-        result = subprocess.run(["powershell.exe", "-Command", check_script], capture_output=True, text=True, timeout=10)
+        result = subprocess.run(["pwsh.exe", "-Command", check_script], capture_output=True, text=True, timeout=10)
         return ("MicrosoftTeams" in result.stdout), "Module check complete."
     except Exception as e:
         return False, f"Environment check failed: {e}"
@@ -514,28 +536,41 @@ with top_pane:
     # --- TOP RIGHT: Teams Pane ---
     with right_col:
         st.subheader("🖥️ Teams Management")
-        if "teams_module_installed" not in st.session_state:
-            has_mod, _ = check_teams_module()
-            st.session_state["teams_module_installed"] = has_mod
-        
-        if st.session_state.get("teams_module_installed"):
-            if "teams_authenticated" not in st.session_state:
-                if st.button("🔑 Connect to Microsoft Teams", width="stretch"):
-                    code, log = execute_embedded_ps(None, action="Login")
-                    if "SUCCESS" in log:
-                        st.session_state["teams_authenticated"] = True
-                        match = re.search(r"TENANT_DOMAIN:\s+(\S+)", log)
-                        st.session_state["connected_tenant"] = match.group(1) if match else "Unknown Domain"
+        # Square brackets create the list of full strings
+        options = ["Graph API", "Teams PowerShell Module"]
+
+        # The selectbox will now show the two distinct choices
+        choice = st.selectbox("Connection Type:", options=options)
+
+        # Store it in session state for use across your app
+        st.session_state["selected_teams_method"] = choice
+
+        if st.session_state["selected_teams_method"] == "Graph API":
+            st.info("Using Microsoft Graph (Service Principal)")
+            # Add your Client ID / Secret inputs here
+        else:
+            st.info("Using Teams PowerShell (Modern Auth)")
+            if "teams_module_installed" not in st.session_state:
+                has_mod, _ = check_teams_module()
+                st.session_state["teams_module_installed"] = has_mod
+            if st.session_state.get("teams_module_installed"):
+                if "teams_authenticated" not in st.session_state:
+                    if st.button("🔑 Connect to Microsoft Teams", width="stretch"):
+                        code, log = execute_embedded_ps(None, action="Login")
+                        if "SUCCESS" in log:
+                            st.session_state["teams_authenticated"] = True
+                            match = re.search(r"TENANT_DOMAIN:\s+(\S+)", log)
+                            st.session_state["connected_tenant"] = match.group(1) if match else "Unknown Domain"
+                            st.rerun()
+                        else: st.error("Auth Failed")
+                else:
+                    st.success(f"✅ Connected to: **{st.session_state.get('connected_tenant')}**")
+                    if st.button("🔌 Disconnect", width="stretch"):
+                        execute_embedded_ps(None, action="Logout")
+                        for key in ["teams_authenticated", "connected_tenant"]:
+                            if key in st.session_state: del st.session_state[key]
                         st.rerun()
-                    else: st.error("Auth Failed")
-            else:
-                st.success(f"✅ Connected to: **{st.session_state.get('connected_tenant')}**")
-                if st.button("🔌 Disconnect", width="stretch"):
-                    execute_embedded_ps(None, action="Logout")
-                    for key in ["teams_authenticated", "connected_tenant"]:
-                        if key in st.session_state: del st.session_state[key]
-                    st.rerun()
-        else: st.error("Teams Module not found.")
+            else: st.error("Teams Module not found.")
 
 # --- BOTTOM PANE: Data Validation Grid ---
 with bottom_pane:

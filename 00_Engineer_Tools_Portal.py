@@ -1,12 +1,11 @@
 import streamlit as st
-from style_utils import inject_custom_nwn_css, add_sidebar_logo
+from style_utils import add_sidebar_logo, inject_custom_nwn_css
 
 # This must be the first Streamlit command on the page
 st.set_page_config(page_title="NWN Portal", layout="wide")
 
-# Inject the shared styles
-inject_custom_nwn_css()
 add_sidebar_logo()
+inject_custom_nwn_css()
 
 st.title("🛠️ NWN Collaboration Engineer Portal")
 st.write("Centralized access for Teams Voice and iPilot automation tools.")

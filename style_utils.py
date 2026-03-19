@@ -6,27 +6,7 @@ def add_sidebar_logo(logo_path="assets/NWN-Logo_No-Tagline_Horizonal_RGB_Orange-
     adjusts padding so it doesn't look cramped.
     """
     # 1. Display the image in the sidebar
-    st.sidebar.image(logo_path, width='stretch')
-    
-    # 2. Add some CSS to pull the logo to the very top and 
-    # fix the spacing between the logo and the navigation links.
-    st.sidebar.markdown(
-        """
-        <style>
-            /* Targets the sidebar content area */
-            [data-testid="stSidebarNav"] {
-                padding-top: 0rem !important;
-            }
-            /* Adds a nice divider under the logo */
-            [data-testid="stSidebar"] img {
-                margin-bottom: 20px;
-                border-bottom: 1px solid #31333f;
-                padding-bottom: 20px;
-            }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+    st.logo(image=logo_path, icon_image=None, size="large")
 
 def inject_custom_nwn_css():
     st.markdown(
