@@ -187,13 +187,8 @@ def send_sync_request(row, account_id, domain_val, domain_type, domain_count, to
     except Exception as e:
         return {"User": row['UserPrincipalName'], "Status": "Error", "Code": "N/A", "Response": str(e)}
 
-async def connect_to_graph():
-    # Explicitly define the NWN Lab App Registration details
-    # In a real app, pull these from st.secrets or os.environ
-    tenant_id = "your-tenant-id"
-    client_id = "your-client-id"
-    client_secret = "your-client-secret"
-
+async def connect_to_graph(tenant_id, client_id, client_secret):
+    # This explicitly uses the values provided in the web form by the user
     credential = ClientSecretCredential(
         tenant_id=tenant_id,
         client_id=client_id,
@@ -562,31 +557,41 @@ with top_pane:
         options = ["Graph API", "Teams PowerShell Module"]
 
         # The selectbox will now show the two distinct choices
-        choice = st.selectbox("Connection Type:", options=options)
+        choice = st.selectbox("🔗 Connection Type:", options=options)
 
         # Store it in session state for use across your app
         st.session_state["selected_teams_method"] = choice
 
         if st.session_state["selected_teams_method"] == "Graph API":
-            st.info("Using Microsoft Graph (Service Principal)")
-            if st.button("Connect to Graph"):
-                try:
-                    # Note: Streamlit runs in a synchronous loop, 
-                    # so we use asyncio.run to bridge the gap
-                    client = asyncio.run(connect_to_graph())
+            st.info("💡 Enter Service Principal credentials for the target environment.")
+    
+            # 3 Textboxes for credentials
+            t_id = st.text_input("Tenant ID", placeholder="00000000-0000-0000-0000-000000000000")
+            c_id = st.text_input("Client ID", placeholder="00000000-0000-0000-0000-000000000000")
+            c_secret = st.text_input("Client Secret", type="password")
 
-                    # IMMEDIATELY CHECK THE ENVIRONMENT
-                    env_details = asyncio.run(verify_environment(client))
+            if st.button("🔗 Connect to Graph"):
+                if not (t_id and c_id and c_secret):
+                    st.warning("Please provide all three credential values.")
+                else:
+                    try:
+                        with st.spinner("Authenticating..."):
+                            # Note: Streamlit runs in a synchronous loop, 
+                            # so we use asyncio.run to bridge the gap
+                            client = asyncio.run(connect_to_graph(t_id, c_id, c_secret))
 
-                    if env_details["Verified"]:
-                        st.session_state["graph_client"] = client
-                        st.session_state["active_tenant"] = env_details["TenantName"]
-                        st.success(f"Connected to: **{env_details['TenantName']}**")
-                    else:
-                        st.error(f"Failed to verify environment: {env_details['Error']}")
+                            # IMMEDIATELY CHECK THE ENVIRONMENT
+                            env_details = asyncio.run(verify_environment(client))
 
-                except Exception as e:
-                    st.error(f"Graph Auth Failed: {e}")
+                            if env_details["Verified"]:
+                                st.session_state["graph_client"] = client
+                                st.session_state["active_tenant"] = env_details["TenantName"]
+                                st.success(f"Connected to: **{env_details['TenantName']}**")
+                            else:
+                                st.error(f"Failed to verify environment: {env_details['Error']}")
+
+                    except Exception as e:
+                        st.error(f"Graph Auth Failed: {e}")
             
             # DISPLAY PERSISTENT WARNING IF CONNECTED
             if "active_tenant" in st.session_state:
