@@ -97,7 +97,7 @@ async def validate_csv_data_graph(df, t_id, c_id, c_secret):
         async with httpx.AsyncClient() as http_client:
             for index, row in df.iterrows():
                 upn = row['UserPrincipalName']
-                expected_phone = str(row['Phone']).strip()
+                expected_phone = str(row['TeamsVoicePhoneNumber']).strip()
                 
                 # Direct API call to check user and their LineURI
                 url = f"https://graph.microsoft.com/v1.0/users/{upn}?$select=displayName,userPrincipalName,onPremisesLineUri"
