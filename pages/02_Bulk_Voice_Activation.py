@@ -9,7 +9,8 @@ import subprocess
 import os
 import tempfile
 import asyncio
-from azure.identity import ClientSecretCredential
+import httpx
+from azure.identity.aio import ClientSecretCredential
 from msgraph import GraphServiceClient
 from style_utils import inject_custom_nwn_css, add_sidebar_logo
 
@@ -202,22 +203,73 @@ async def get_teams_user(client, user_upn):
     user = await client.users.by_user_id(user_upn).get()
     return user
 
-async def verify_environment(client: GraphServiceClient):
+async def verify_environment_standalone(t_id, c_id, c_secret):
     try:
-        # Query the 'organization' endpoint for tenant details
-        # This is the equivalent of 'Get-MgOrganization' in PowerShell
-        org_info = await client.organization.get()
+        # 1. Use the ASYNC version of the credential
+        async with ClientSecretCredential(
+            tenant_id=t_id,
+            client_id=c_id,
+            client_secret=c_secret
+        ) as credential:
+            
+            # Now 'await' will work correctly here
+            token = await credential.get_token("https://graph.microsoft.com/.default")
+            
+            # 2. Make the direct REST call
+            url = "https://graph.microsoft.com/v1.0/organization"
+            headers = {"Authorization": f"Bearer {token.token}"}
+            
+            async with httpx.AsyncClient() as http_client:
+                response = await http_client.get(url, headers=headers)
+                
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("value"):
+                    org = data["value"][0]
+                    return {
+                        "TenantName": org["displayName"],
+                        "TenantId": org["id"],
+                        "Verified": True
+                    }
+            else:
+                return {"Verified": False, "Error": f"API Error {response.status_code}: {response.text}"}
+                
+    except Exception as e:
+        return {"Verified": False, "Error": f"Connection Failed: {str(e)}"}
+
+async def verify_environment(client):
+    try:
+        # We bypass the 'client.organization.get()' call which is failing
+        # and use the raw request adapter already inside the client.
         
-        # Access the first (and only) organization object
-        if org_info and org_info.value:
-            tenant = org_info.value[0]
+        # 1. Get the access token from the client's credential
+        # 2. Call the endpoint directly
+        url = "https://graph.microsoft.com/v1.0/organization"
+        
+        # The client has an internal 'request_adapter'. We can use its 
+        # base URL and auth to make a manual call if needed, 
+        # but a simple 'httpx' call is cleaner for a quick verify.
+        
+        token_credential = client.request_adapter.authentication_provider.credential
+        token = await token_credential.get_token("https://graph.microsoft.com/.default")
+        
+        async with httpx.AsyncClient() as http_client:
+            headers = {"Authorization": f"Bearer {token.token}"}
+            response = await http_client.get(url, headers=headers)
+            data = response.json()
+            
+        if response.status_code == 200 and data.get("value"):
+            org = data["value"][0]
             return {
-                "TenantName": tenant.display_name,
-                "TenantId": tenant.id,
+                "TenantName": org["displayName"],
+                "TenantId": org["id"],
                 "Verified": True
             }
+        else:
+            return {"Verified": False, "Error": f"Status {response.status_code}: {data}"}
+            
     except Exception as e:
-        return {"Verified": False, "Error": str(e)}
+        return {"Verified": False, "Error": f"Direct Call Failed: {str(e)}"}
 
 def check_teams_module():
     check_script = "Get-Module -ListAvailable MicrosoftTeams"
@@ -575,23 +627,21 @@ with top_pane:
                     st.warning("Please provide all three credential values.")
                 else:
                     try:
-                        with st.spinner("Authenticating..."):
-                            # Note: Streamlit runs in a synchronous loop, 
-                            # so we use asyncio.run to bridge the gap
-                            client = asyncio.run(connect_to_graph(t_id, c_id, c_secret))
-
-                            # IMMEDIATELY CHECK THE ENVIRONMENT
-                            env_details = asyncio.run(verify_environment(client))
+                        with st.spinner("Verifying Credentials..."):
+                            env_details = asyncio.run(verify_environment_standalone(t_id, c_id, c_secret))
 
                             if env_details["Verified"]:
-                                st.session_state["graph_client"] = client
+                                # Credentials are good! NOW initialize the main client
+                                st.session_state["graph_client"] = asyncio.run(connect_to_graph(t_id, c_id, c_secret))
                                 st.session_state["active_tenant"] = env_details["TenantName"]
-                                st.success(f"Connected to: **{env_details['TenantName']}**")
+                                
+                                # Set your persistent success message
+                                st.session_state["graphconn_success_msg"] = f"Connected to: **{env_details['TenantName']}**"
+                                st.rerun()
                             else:
                                 st.error(f"Failed to verify environment: {env_details['Error']}")
-
                     except Exception as e:
-                        st.error(f"Graph Auth Failed: {e}")
+                        st.error(f"Critical Error: {str(e)}")
             
             # DISPLAY PERSISTENT WARNING IF CONNECTED
             if "active_tenant" in st.session_state:
