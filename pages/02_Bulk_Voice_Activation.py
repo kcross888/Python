@@ -507,10 +507,12 @@ with st.sidebar:
     ipilot_cust = st.session_state.get("selected_customer_name", "None Selected")
     ipilot_dom = st.session_state.get("active_conn_type", "None Selected")
     teams_tenant = st.session_state.get("connected_tenant", "Disconnected")
+    active_tenant = st.session_state.get("active_tenant", "Disconnected")
     
     st.markdown(f"**iPilot Customer:** `{ipilot_cust}`")
     st.markdown(f"**iPilot Domain:** `{ipilot_dom}`")
     st.markdown(f"**Teams Tenant:** `{teams_tenant}`")
+    st.markdown(f"**Graph Tenant:** `{active_tenant}`")
     st.divider()
 
     st.header("Upload & Tools")
