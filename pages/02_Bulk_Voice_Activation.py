@@ -87,6 +87,44 @@ def is_valid_phone(phone):
 def is_valid_account(acc_type):
     return str(acc_type).strip().lower() in ['user', 'resource']
 
+async def validate_csv_data_graph(df, t_id, c_id, c_secret):
+    results = []
+    
+    async with ClientSecretCredential(tenant_id=t_id, client_id=c_id, client_secret=c_secret) as credential:
+        token = await credential.get_token("https://graph.microsoft.com/.default")
+        headers = {"Authorization": f"Bearer {token.token}", "Content-Type": "application/json"}
+        
+        async with httpx.AsyncClient() as http_client:
+            for index, row in df.iterrows():
+                upn = row['UserPrincipalName']
+                expected_phone = str(row['Phone']).strip()
+                
+                # Direct API call to check user and their LineURI
+                url = f"https://graph.microsoft.com/v1.0/users/{upn}?$select=displayName,userPrincipalName,onPremisesLineUri"
+                
+                try:
+                    response = await http_client.get(url, headers=headers)
+                    if response.status_code == 200:
+                        data = response.json()
+                        actual_phone = data.get("onPremisesLineUri", "")
+                        
+                        # Logic Check: Does UPN exist and does Phone match?
+                        upn_exists = True
+                        phone_matches = (actual_phone == expected_phone) if expected_phone != "nan" else False
+                        
+                        results.append({
+                            "UPN": upn,
+                            "Status": "✅ Found" if upn_exists else "❌ Missing",
+                            "Phone Match": "✅ Match" if phone_matches else f"❌ Mismatch (Found: {actual_phone})",
+                            "DisplayName": data.get("displayName", "N/A")
+                        })
+                    else:
+                        results.append({"UPN": upn, "Status": "❌ Not Found", "Phone Match": "N/A", "DisplayName": "N/A"})
+                except Exception as e:
+                    results.append({"UPN": upn, "Status": "⚠️ Error", "Phone Match": str(e), "DisplayName": "N/A"})
+                    
+    return pd.DataFrame(results)
+
 # --- API Logic ---
 @st.dialog("Connect to iPilot")
 def login_dialog():
@@ -779,7 +817,7 @@ with bottom_pane:
 
                 with exec_col2:
                     st.write("### Microsoft Teams Action")
-                    if st.session_state.get("teams_authenticated"):
+                    if st.session_state.get("teams_authenticated"):                        
                         if st.button("✅ Validate UPNs and Phone Numbers in Teams ", width="stretch"):
                             with st.spinner("Multithreading in progress..."):
                                 # Execute your PS7 script
@@ -841,6 +879,33 @@ with bottom_pane:
                                         st.code(clean_text, language="text") # Show raw output if parsing fails
                         if st.button("🚀 Execute Teams Bulk Assignment", type="primary", width="stretch"):
                             execute_embedded_ps(st.session_state["current_df"], action="BulkSync")
+                    elif st.session_state.get("selected_teams_method") == "Graph API":
+                         if st.button("🔍 Run Data Validation"):
+                            if "current_df" in st.session_state and "active_tenant" in st.session_state:
+                                with st.spinner(f"Cross-referencing UPNs and Phone Numbers in CSV with {st.session_state['active_tenant']}..."):
+                                    
+                                    # Use the credentials stored in session state or from the textboxes
+                                    report_df = asyncio.run(validate_csv_data_graph(
+                                        st.session_state["current_df"], 
+                                        t_id, c_id, c_secret
+                                    ))
+                                    
+                                    # Display Results
+                                    st.subheader("Validation Report")
+                                    
+                                    # Style the dataframe so errors pop out
+                                    def color_status(val):
+                                        color = 'red' if '❌' in str(val) or '⚠️' in str(val) else 'green'
+                                        return f'color: {color}'
+
+                                    st.dataframe(report_df.style.applymap(color_status, subset=['Status', 'Phone Match']))
+                                    
+                                    # Summary Metrics
+                                    success_count = len(report_df[report_df['Status'] == "✅ Found"])
+                                    st.metric("Users Found in Tenant", f"{success_count} / {len(report_df)}")
+                            else:
+                                st.error("Please upload a CSV and connect to Graph first.")
+
                     else: st.warning("Connect to Microsoft Teams first.")
         else: st.error(f"Missing Columns: {EXPECTED_COLUMNS}")
     else: st.info("Upload a CSV file in the sidebar to populate the grid.")
