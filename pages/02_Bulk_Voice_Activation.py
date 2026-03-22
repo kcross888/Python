@@ -863,7 +863,7 @@ with bottom_pane:
                                             return f'color: {color}; font-weight: bold'
 
                                         st.dataframe(
-                                            details_df.style.applymap(color_status, subset=['Status']),
+                                            details_df.style.map(color_status, subset=['Status']),
                                             width="stretch",
                                             hide_index=True
                                         )
