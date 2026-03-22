@@ -460,7 +460,7 @@ if ($Action -eq "Logout") {
 }
 if ($Action -eq "Validation") {
     $UserData = $JsonData | ConvertFrom-Json
-    Connect-MicrosoftTeams 
+    [void]Connect-MicrosoftTeams 
     Write-Host "Processing $($UserData.Count) records for validation..."
     $myAction = {
         param($upn) # This comes from the -upn argument in the wrapper
